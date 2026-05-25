@@ -1,0 +1,26 @@
+version: 1
+enabled: undecided
+subject: TBD
+audience: TBD
+default_duration_minutes: null
+lab_mode: undecided
+environment:
+  os: undecided
+  languages: []
+  tools: []
+  container_allowed: undecided
+deliverables:
+  starter: undecided
+  solution: undecided
+  tests: undecided
+  verify_script: undecided
+  report_questions: undecided
+theme_specific_questions: []
+generic_question_template:
+  - Should this textbook include labs at all, and are they required or optional?
+  - What kind of lab best fits this course topic: observation, simulation, programming, proof/calculation, case study, or project?
+  - What tools and environment should students already have?
+  - How long should one lab take?
+  - Should each lab include starter files, reference solutions, tests, and verification commands?
+  - Should labs primarily support conceptual understanding, exam practice, or engineering practice?
+

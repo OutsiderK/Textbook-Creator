@@ -1,12 +1,12 @@
 # Reference: Stage C — Write Chapter
 
-Trigger: `inspect_state.py` reports `kp_status.queued_new` non-empty AND one or more chapters have all their queued KPs ready. Or user says "写第 N 章 / 生成 chXX".
+Trigger: `inspect_state.py --json` reports queued KPs with `queue.action: new_chapter` AND one or more target chapters have all their queued KPs ready. Or user says "写第 N 章 / 生成 chXX".
 
 > **Stage C 的座右铭：成书。** 写出的章节要让读者感觉是一本"已经打磨完成的书"的某一章，不出现任何工作流术语。诚实承认本章无法深入的内容，但用自然散文表达。
 
 ## Input
 
-- `spec/knowledge-points.yaml`（特别是 `action: new_chapter` + `applied_to: <target>` 的 KP）
+- `spec/knowledge-points.yaml`（特别是 `queue.action: new_chapter` + `queue.target: book/chNN-...` 的 KP）
 - `spec/chapter-template.md`
 - `spec/style-guide.md`
 - `spec/terminology.md`
@@ -16,28 +16,34 @@ Trigger: `inspect_state.py` reports `kp_status.queued_new` non-empty AND one or 
 ## Output
 
 - `book/chNN-slug.md` —— 主稿，包含 front-matter 与正文
-- KP 状态翻转：`status: queued → applied`，清掉 `action` 字段
+- KP 状态翻转：由 `workflow_job.py finish` 完成 `status: queued → applied`、清掉 `queue` 字段、追加 `applied_to`
 - `spec/course-skeleton.md` —— 本章状态从 `drafted-pending` 改为 `drafted`
 - `spec/open-questions.md` —— 登记本章产生的新 OQ；勾选闭合的 OQ
 
 **Do NOT touch**: source-index, terminology, style-guide, chapter-template, 任何其他章的文件。
 
-## In-Progress Marker
+## Start the Job
 
-```yaml
-stage: write-chapter
-batch: 003
-target: ch08-memory-management
-kp_ids:
-  - OSPPT-CH08-PAGE-TABLE
-  - OSPPT-CH08-MULTILEVEL-PT
-  - ...
-notes: "Stage C drafting ch08 from rebalance-003 output"
+Before any edits, lock the target KPs:
+
+```bash
+python3 scripts/workflow_job.py start \
+  --id ch08-write-003 \
+  --stage write_chapter \
+  --target book/ch08-memory-management.md \
+  --batch 003 \
+  --queue-action new_chapter \
+  --kps OSPPT-CH08-PAGE-TABLE OSPPT-CH08-MULTILEVEL-PT ...
 ```
 
-Recovery:
+This writes `spec/workflow-state.yaml.current_job` and sets `locked_by` on each KP. If a job is already active, the script refuses—abort it first if intended.
+
+### Recovery from interruption
+
+If `inspect_state.py` reports `workflow.current_job` matching this stage:
 - If `book/ch08-*.md` exists with substantial content → ask user 续写 or 重写
 - If file empty or absent → 从 template 重启
+- If user chooses to discard: `workflow_job.py abort --id <job-id> --to-status queued` rolls KPs back
 
 ## Naming
 
@@ -49,14 +55,14 @@ Recovery:
 
 ### 1. Read inputs
 
-读 target 章节的所有 queued KP（按 cognitive_role 分类）：
-- `foundation` —— 开篇问题与核心抽象的根据
-- `mechanism` —— 主线展开的骨架
-- `method` —— 具体步骤/技术
-- `example` —— 例题素材
-- `formula` —— 公式、定量关系
-- `pitfall` —— 常见误区
-- `exam_pattern` —— 考试出题模式
+读 target 章节的所有 queued KP（按 role 分类）：
+- `foundation` — 开篇问题与核心抽象的根据
+- `mechanism` — 主线展开的骨架
+- `method` — 具体步骤/技术
+- `example` — 例题素材
+- `formula` — 公式、定量关系
+- `pitfall` — 常见误区
+- `exam_pattern` — 考试出题模式
 
 读 detail_cards（按 type）：
 - `method/example/operation/figure/exam_tip` —— 决定它们出现在正文哪里（主线、例题、常见误区、figure embed）
@@ -79,6 +85,7 @@ foundation 引入 → mechanism 展开 → method/operation 具体化 → exampl
 ---
 chapter: ch08-memory-management
 title: <章节标题>
+order: 8
 assumes:                # 上游章节已 introduce 的概念 id
   - ch07-introduces:文件存储抽象
   - ch07-introduces:磁盘 I/O 模型
@@ -93,6 +100,8 @@ open_questions:         # 本章登记的 OQ
 coverage:               # 本章覆盖的 KP id
   - OSPPT-CH08-PAGE-TABLE
   - ...
+source_batches: [003]
+lab: null               # or labXX-slug if a lab is attached
 ---
 
 # 第 8 章：<标题>
@@ -111,7 +120,7 @@ coverage:               # 本章覆盖的 KP id
 
 ## 本章地图
 
-(一段自然散文，说明本章要解决什么；其中可以包含"本章先关注 X，至于 Y，要等到我们引入 Z 之后才能讲清楚"这样的边界说明 —— 但**不允许**用 "defer/future-unknown/TODO" 等词。)
+(一段自然散文，说明本章要解决什么；其中可以包含"本章先关注 X，至于 Y，要等到我们引入 Z 之后才能讲清楚"这样的边界说明——但**不允许**用 "defer/future-unknown/TODO" 等词。)
 
 ## 正文
 
@@ -184,18 +193,15 @@ coverage:               # 本章覆盖的 KP id
 
 这些会出现在练习区或本章/邻章的回顾段中。
 
-### 7. 关闭和登记 open questions
+### 7. 前置 KP 缺失的处理
+
+如果某个概念本章一定要用但**没**前置 KP 支撑——**不要**在本章硬塞解释，**回 Stage B 检查是否应该把那个概念作为补丁加到前章**。这是单调积累原则的保护：不要让本章读起来流畅但实际把前章本该有的内容硬塞进来。
+
+### 8. 关闭和登记 open questions
 
 读 `spec/open-questions.md`：
 - 如果本章 KP 回答了某条 open OQ → 在 OQ 条目下标 `状态: closed`、`关闭于: ch08`、`关闭 KP: <id>`、移到"已解决"段。
-- 如果本章引出了无法当章回答的问题（"我们这里先按 X 处理；完整故事在 Y 之后") → 登记新 OQ，并在 front-matter `open_questions` 添加 id。
-
-### 8. 状态翻转
-
-对本章所有 queued KP：
-- `status: queued → applied`
-- 删除 `action` 字段
-- 保留 `applied_to`、`reader_notice`、`links`、`detail_cards`
+- 如果本章引出了无法当章回答的问题（"我们这里先按 X 处理；完整故事在 Y 之后"）→ 登记新 OQ，并在 front-matter `open_questions` 添加 id。
 
 ### 9. 更新 course-skeleton
 
@@ -209,17 +215,31 @@ coverage:               # 本章覆盖的 KP id
 - ch08-memory-management — drafted   ← 新增/更新
 ```
 
-### 10. Cleanup
+### 10. Finish the Job
 
-Delete `.in-progress.yaml`. Run checks:
+After all edits and before announcing success:
 
 ```bash
-python3 scripts/check_kp_schema.py <project-root>
-python3 scripts/check_chapter_frontmatter.py book/ch08-*.md
-python3 scripts/check_open_questions.py <project-root>
+python3 scripts/workflow_job.py finish \
+  --id ch08-write-003 \
+  --applied-to book/ch08-memory-management.md
 ```
 
-### 11. 报告
+This auto-flips each KP `status: queued → applied`, clears `queue` and lock fields, appends `book/ch08-memory-management.md` to `applied_to`, and archives the job to `workflow-state.yaml.history`.
+
+**Do NOT** manually edit KP status fields. `workflow_job.py finish` is the only correct way.
+
+### 11. Run checks
+
+```bash
+python3 scripts/check_kp_schema.py
+python3 scripts/check_chapter_frontmatter.py
+python3 scripts/check_open_questions.py
+```
+
+All checks must pass (hard) before announcing success.
+
+### 12. 报告
 
 ```
 已生成 ch08-memory-management 草稿 (book/ch08-memory-management.md):
@@ -227,17 +247,17 @@ python3 scripts/check_open_questions.py <project-root>
   - 引入概念: 多级页表, TLB 协作, ...
   - 新 OQ: 1 条 (OQ-005)
   - 关闭 OQ: 1 条 (OQ-002)
-  
+
 按你的设计，我已经在草稿正文里用自然散文交代了"完整虚拟内存替换算法在后续章节展开"。
 
-下一步? (pool / queued_patch 状态见 inspect_state)
+下一步? (按 inspect_state.py 提示)
 ```
 
 ## Write Boundaries
 
 - ✅ `book/chNN-slug.md`（目标章）
 - ✅ `assets/figures/chNN-*.svg`（本章新增 figures）
-- ✅ `spec/knowledge-points.yaml`（**仅** status / action 字段翻转，以及 `retrieval_hooks.bridging` 补充）
+- ✅ `spec/knowledge-points.yaml`（**仅** `retrieval_hooks.bridging` 补充 + `detail_cards[i].deferred` 标记；status/queue/applied_to 由 workflow_job.py 管）
 - ✅ `spec/course-skeleton.md`（本章状态）
 - ✅ `spec/open-questions.md`
 - ❌ 其他章节文件
@@ -248,6 +268,7 @@ python3 scripts/check_open_questions.py <project-root>
 
 - 不要在正文写 "TODO / defer / 后续补充" 等工作流痕迹。
 - 不要在正文加日期或版本号。
-- 不要写到读者真的无法读懂 —— 如果某个概念本章一定要用但**没**前置 KP 支撑，**回 Stage B 看是否要 patch 前章**，而不是在本章硬塞解释。
+- 不要手动 flip KP `status: queued → applied` —— 用 `workflow_job.py finish`。
+- 不要写到读者真的无法读懂——如果某个概念本章一定要用但**没**前置 KP 支撑，**回 Stage B 看是否要 patch 前章**，而不是在本章硬塞解释。
 - 不要主动改 chapter-template.md 或 style-guide.md。它们是项目共享 spec。
-- 不要在 Stage C 同时写两章 —— 一次只写一章，写完报告后由用户决定是否继续下一章。
+- 不要在 Stage C 同时写两章——一次只写一章，写完报告后由用户决定是否继续下一章。

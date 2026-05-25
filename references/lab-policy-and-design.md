@@ -22,20 +22,20 @@ Loaded when:
 `spec/lab-policy.yaml`:
 
 ```yaml
-enabled: true | false | undecided
+enabled: true            # true | false | undecided
 # 如果 enabled=false，下面字段都不必填
 # 如果 enabled=undecided，可以仅记 preferences，等出现 lab 候选时再补完
 defaults:
-  required_or_optional: required | optional | teacher_only
-  expected_minutes: 30 | 45 | 60 | 90
-  needs_reference_solution: true | false
-  needs_starter: true | false
-  needs_verify_script: true | false
-  target_env: linux | wsl | docker | any
+  required_or_optional: required   # required | optional | teacher_only
+  expected_minutes: 60             # 30 | 45 | 60 | 90
+  needs_reference_solution: true
+  needs_starter: true
+  needs_verify_script: true
+  target_env: linux                # linux | wsl | docker | any
 preferences:
-  course_focus: mechanism_understanding | exam_drill | engineering_practice
-  toolchain: []     # e.g. ["xv6", "nemu", "python", "c-posix", "command-observe"]
-  forbidden: []     # e.g. ["root", "network"]
+  course_focus: mechanism_understanding   # mechanism_understanding | exam_drill | engineering_practice
+  toolchain: []                            # e.g. ["xv6", "nemu", "python", "c-posix", "command-observe"]
+  forbidden: []                            # e.g. ["root", "network"]
 note: |
   自由文本，记录用户对实验风格的偏好或避坑。
 ```
@@ -84,7 +84,7 @@ preferences:
 
 ## Lab 设计的内容流程
 
-当 lab 真的要做（用户已批准 lab 政策 + Stage B 标了 lab 候选 + 用户进入 Stage C/lab 模块）：
+当 lab 真的要做（用户已批准 lab 政策 + Stage B 标了 lab 候选 + 用户进入 lab 模块）：
 
 ### 1. Lab 类型选择
 
@@ -92,11 +92,11 @@ preferences:
 
 | 类型 | 适用场景 | 学生时间 | 产物 |
 |---|---|---|---|
-| **observation** | 用现成工具观察现象（strace、top、ps）| 30 min | 命令清单 + 观察记录表 + 解释题 |
-| **python-simulator** | 模拟算法行为（调度、页面替换）| 45 min | starter.py + TODO + solution.py + verify.py |
+| **observation** | 用现成工具观察现象（strace、top、ps） | 30 min | 命令清单 + 观察记录表 + 解释题 |
+| **python-simulator** | 模拟算法行为（调度、页面替换） | 45 min | starter.py + TODO + solution.py + verify.py |
 | **c-posix** | 系统调用/同步原语实操 | 60 min | C 源码 + Makefile + verify.sh |
 | **mini-kernel** | xv6/Nachos/NEMU 修改 | 60-90 min | patch + 测试用例 |
-| **observation+report** | 课堂阅读+表格填写（非编码）| 30 min | 表格 + 解释问题 |
+| **observation+report** | 课堂阅读+表格填写（非编码） | 30 min | 表格 + 解释问题 |
 
 ### 2. Lab 目录结构
 
@@ -121,6 +121,8 @@ labs/
 ```
 
 ### 3. README 必备段落
+
+参见 `spec/lab-template.md` 的完整模板。结构总览：
 
 ```markdown
 # Lab XX: <标题>
@@ -152,16 +154,20 @@ labs/
 ### 4. 验证脚本约束
 
 - 必须有 `verify.sh` (或等价的一行命令) 给参考解通过。
-- 参考解必须真实运行通过 —— 写 lab 前先跑通参考解，再写学生 starter。
+- 参考解必须真实运行通过——写 lab 前先跑通参考解，再写学生 starter。
 - 学生 TODO 处的 starter 必须**通过编译/解析**但**不通过 verify**。
 
 ### 5. 例题与考题对齐（应试 lab 时）
 
-如果 lab-policy.yaml 的 `preferences.course_focus = exam_drill`，lab 的 TODO 应该对应该章 KP 的 `detail_cards.type=exam_pattern` 或 `exam_tip`。
+按 `preferences.course_focus` 映射 lab TODO 与 KP：
 
-如果是 `mechanism_understanding`，TODO 应该对应 `role=mechanism` 的核心 KP。
+| course_focus | TODO 来源 |
+|---|---|
+| `exam_drill` | KP 的 `detail_cards.type=exam_tip` 或 KP 的 `role=exam_pattern` |
+| `mechanism_understanding` | KP 的 `role=mechanism` (实现机制核心步骤) |
+| `engineering_practice` | KP 的 `detail_cards.type=operation` (真实系统命令/调用) |
 
-如果是 `engineering_practice`，TODO 应该对应 `detail_cards.type=operation`。
+混合时分主次：标 `主轴: mechanism_understanding`，少量 `exam_drill` TODO 作 bonus。
 
 ### 6. Cleanup 与 checks
 
@@ -192,5 +198,5 @@ python3 scripts/check_lab.py labs/labXX-slug/
 - 不要在 lab README 写日期或版本号。
 - 不要把所有章节都强行配 lab。有些章本来就该是纯阅读章节。
 - 不要让学生时长超过 90 分钟而不提示"分两次做"。
-- 不要在 Stage C 自动连带创建 lab —— lab 是独立决策。
+- 不要在 Stage C 自动连带创建 lab——lab 是独立决策。
 - 不要给 observation 类型 lab 配复杂 verify 脚本（与类型不符）。
