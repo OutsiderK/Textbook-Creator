@@ -17,11 +17,60 @@ VALID_ROLE = {
     "formula", "pitfall", "exam_pattern",
 }
 VALID_CARD_TYPE = {"method", "example", "operation", "figure", "exam_tip"}
+VALID_REVIEW_RISK = {"high", "medium", "low", "section_divider"}
+VALID_PAGE_CLASS = {
+    "process_diagram", "architecture_diagram", "state_machine",
+    "comparison_table", "formula_derivation", "chart_or_plot",
+    "code_or_command", "case_steps", "taxonomy", "table",
+    "screenshot_or_scanned", "section_divider", "text_dense",
+    "normal_text",
+}
+VALID_STRUCTURE_KIND = {
+    "ordered_chain", "comparison", "state_machine", "formula",
+    "taxonomy", "process", "case_steps", "table", "diagram",
+}
 VALID_HOLD_REASON = {
     "awaiting_followup", "bridging_undefined",
     "enrichment_only", "manual_review",
 }
 REQUIRED = {"id", "concept", "status"}
+
+
+def validate_string_list(label: str, value: Any, errors: list[str]) -> None:
+    if not isinstance(value, list):
+        errors.append(f"{label} must be a list")
+        return
+    for j, item in enumerate(value):
+        if not isinstance(item, str) or not item.strip():
+            errors.append(f"{label}[{j}] must be a non-empty string")
+
+
+def validate_must_cover(kp_id: str, card_index: int, value: Any, errors: list[str]) -> None:
+    label = f"{kp_id}: detail_cards[{card_index}].must_cover"
+    if not isinstance(value, list):
+        errors.append(f"{label} must be a list")
+        return
+    for j, item in enumerate(value):
+        prefix = f"{label}[{j}]"
+        if not isinstance(item, dict):
+            errors.append(f"{prefix} must be a mapping")
+            continue
+        term = item.get("item")
+        if not isinstance(term, str) or not term.strip():
+            errors.append(f"{prefix}.item must be a non-empty string")
+        aliases = item.get("aliases")
+        if aliases is not None:
+            validate_string_list(f"{prefix}.aliases", aliases, errors)
+        role = item.get("role")
+        if role is not None and (not isinstance(role, str) or not role.strip()):
+            errors.append(f"{prefix}.role must be a non-empty string")
+        deferred = item.get("deferred")
+        if deferred is not None and not isinstance(deferred, bool):
+            errors.append(f"{prefix}.deferred must be bool")
+        if deferred:
+            reason = item.get("defer_reason")
+            if not isinstance(reason, str) or not reason.strip():
+                errors.append(f"{prefix}.defer_reason is required when deferred=true")
 
 
 def validate_detail_cards(kp_id: str, cards: Any, errors: list[str]) -> None:
@@ -42,6 +91,33 @@ def validate_detail_cards(kp_id: str, cards: Any, errors: list[str]) -> None:
         deferred = card.get("deferred")
         if deferred is not None and not isinstance(deferred, bool):
             errors.append(f"{kp_id}: detail_cards[{i}].deferred must be bool")
+        visual_reviewed = card.get("visual_reviewed")
+        if visual_reviewed is not None and not isinstance(visual_reviewed, bool):
+            errors.append(f"{kp_id}: detail_cards[{i}].visual_reviewed must be bool")
+        risk = card.get("review_risk_level")
+        if risk is not None and risk not in VALID_REVIEW_RISK:
+            errors.append(
+                f"{kp_id}: detail_cards[{i}].review_risk_level must be in "
+                f"{sorted(VALID_REVIEW_RISK)}, got {risk!r}"
+            )
+        page_class = card.get("page_class")
+        if page_class is not None and page_class not in VALID_PAGE_CLASS:
+            errors.append(
+                f"{kp_id}: detail_cards[{i}].page_class must be in "
+                f"{sorted(VALID_PAGE_CLASS)}, got {page_class!r}"
+            )
+        structure_kind = card.get("structure_kind")
+        if structure_kind is not None and structure_kind not in VALID_STRUCTURE_KIND:
+            errors.append(
+                f"{kp_id}: detail_cards[{i}].structure_kind must be in "
+                f"{sorted(VALID_STRUCTURE_KIND)}, got {structure_kind!r}"
+            )
+        verified_items = card.get("verified_items")
+        if verified_items is not None:
+            validate_string_list(f"{kp_id}: detail_cards[{i}].verified_items", verified_items, errors)
+        must_cover = card.get("must_cover")
+        if must_cover is not None:
+            validate_must_cover(kp_id, i, must_cover, errors)
 
 
 def validate_links(kp_id: str, links: Any, errors: list[str]) -> None:

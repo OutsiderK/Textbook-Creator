@@ -19,6 +19,7 @@ The skill has one public interface. Do not ask the user to invoke internal stage
 4. **延迟归属** — 不确定的 KP 留 hold（`queue.action: hold` + `queue.reason`），不硬塞章节。
 5. **聚簇切分** — 章节边界由概念关联度决定；数量规则只做软提醒。
 6. **应试细节保留** — PPT 里的方法/技巧/例题/图表/易错点抓进 KP 的 `detail_cards`。
+7. **视觉保真** — 对 PDF/PPT 中纯文本抽取可能丢失的图、表、公式、流程、状态图、代码截图和扫描页做风险分级；默认只视觉复核 `high` 页，`medium` 页仅在用户要求、抽样发现漏点或 agent 明确判断必要时复核。
 
 ## Project Root
 
@@ -176,15 +177,39 @@ Main chapters must read like a polished textbook. Do not expose workflow vocabul
 
 `check_chapter_frontmatter.py` scans for forbidden tokens; chapter completion fails if any are present.
 
+## Visual Review Policy
+
+Stage A must treat source PDFs/PPTs as mixed text-and-visual artifacts. Text extraction is a skeleton, not proof of coverage.
+
+During ingest, classify pages with cross-discipline signals:
+
+- **Structural signals**: low extracted text, large or many images, image-only/scanned pages, likely vector diagrams, table-like layouts, formula-like text, code/command blocks, high font-size variance, or title-only section dividers.
+- **Lexical signals**: Chinese or English headings suggesting structure, process, formula, proof, comparison, classification, case/example, experiment, architecture, state transition, table, or diagram.
+- **Extraction anomaly signals**: garbled formulas, missing labels, empty pages with visible content, text order that likely lost rows/columns/arrows.
+- **Context signals**: neighboring pages indicate a process/structure/algorithm/formula/example section even if the current page has no reliable title.
+- **Environment adaptation**: do not assume Poppler commands or a PDF-native visual `Read(...)` tool are available. If direct PDF visual reading is unavailable, render high-risk pages or contact sheets with an available renderer such as PyMuPDF/fitz, then visually inspect the rendered PNGs.
+- **False-positive control**: PPT master backgrounds, decorative images, and repeated template elements can make `page.images` look risky. Treat image count/area as candidate evidence, then confirm final risk with text density, vector/layout signals, page title, neighboring context, and low-resolution page thumbnails when available.
+
+Assign each page a `risk_level` and `page_class`:
+
+- `risk_level: high` — visual review is required before Stage A can claim the page's important details were captured.
+- `risk_level: medium` — do not review by default. Review only if the user requests it, high-page review reveals nearby omissions, or a small medium-page sample shows the extraction is unreliable.
+- `risk_level: low` — no visual review by default.
+- `risk_level: section_divider` — use as context for adjacent pages; do not review alone unless it contains substantive visual content.
+
+Suggested `page_class` values: `process_diagram`, `architecture_diagram`, `state_machine`, `comparison_table`, `formula_derivation`, `chart_or_plot`, `code_or_command`, `case_steps`, `taxonomy`, `table`, `screenshot_or_scanned`, `section_divider`, `text_dense`, `normal_text`.
+
+For visually reviewed high-risk pages, convert visible exam-relevant details into `detail_cards`, using `structure_kind`, `verified_items`, and `must_cover` when the card contains nodes, steps, variables, conditions, rows/columns, comparisons, formulas, code commands, or other details that must survive into the textbook. Use `item` rather than `term` because cross-discipline details may be formulas, steps, conditions, categories, variables, or case facts.
+
 ## Write Boundaries (per stage)
 
 Each stage may only modify the files its reference document declares:
 
 - **Stage Init** — `spec/*` (template files from `<skill-dir>/assets/project-template/`)
-- **Stage A (Ingest)** — `spec/knowledge-points.yaml` (append), `spec/source-index.yaml`, `docs/ingest-<batch>.md`
+- **Stage A (Ingest)** — `spec/knowledge-points.yaml` (append), `spec/source-index.yaml`, `docs/ingest-<batch>.md`, optional `docs/page-risk-<batch>.yaml`
 - **Stage B (Rebalance)** — `spec/knowledge-points.yaml` (status/queue/reader_notice flips), `spec/course-skeleton.md`, `spec/open-questions.md`, `docs/rebalance-<batch>.md`
-- **Stage C (Write)** — `book/chNN-slug.md`, `assets/figures/chNN-*.svg`, `spec/knowledge-points.yaml` (only `retrieval_hooks.bridging` + `detail_cards[i].deferred` — other fields via `workflow_job`), `spec/course-skeleton.md`, `spec/open-questions.md`
-- **Stage D (Integrate Supplement)** — `book/chMM-slug.md`, `book/supplements/chMM-*.md`, `assets/figures/chMM-*.svg`, `spec/open-questions.md` (status/reader_notice via `workflow_job`)
+- **Stage C (Write)** — `book/chNN-slug.md`, `assets/figures/chNN-*.svg`, `spec/knowledge-points.yaml` (only `retrieval_hooks.bridging`, `detail_cards[i].deferred`, and `detail_cards[i].must_cover[j].deferred/defer_reason` — other fields via `workflow_job`), `spec/course-skeleton.md`, `spec/open-questions.md`
+- **Stage D (Integrate Supplement)** — `book/chMM-slug.md`, `book/supplements/chMM-*.md`, `assets/figures/chMM-*.svg`, `spec/knowledge-points.yaml` (only `detail_cards[i].deferred` and `detail_cards[i].must_cover[j].deferred/defer_reason` — status/reader_notice via `workflow_job`), `spec/open-questions.md`
 - **Lab** — `labs/labXX-slug/*`, `spec/lab-policy.yaml` (init only)
 
 If a stage needs to modify a shared spec file (`terminology.md`, `style-guide.md`, `chapter-template.md`, `lab-policy.yaml` outside init), **stop and ask the user** before writing.

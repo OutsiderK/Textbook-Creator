@@ -66,6 +66,7 @@ If `inspect_state.py` reports `workflow.current_job` matching this stage:
 
 读 detail_cards（按 type）：
 - `method/example/operation/figure/exam_tip` —— 决定它们出现在正文哪里（主线、例题、常见误区、figure embed）
+- 带 `must_cover` 的 card —— 逐项决定落在正文、SVG 图、术语、例题或练习中；`item` 可是术语、公式、变量、条件、步骤、类别、表格维度或案例事实。
 
 ### 2. 决定叙事顺序
 
@@ -184,6 +185,13 @@ lab: null               # or labXX-slug if a lab is attached
 
 不允许把 detail_cards 整张吞掉而不用。如果某张卡确实不适合本章，**显式标记**到 KP 上：`detail_cards[i].deferred: true`，待 Stage D 或后续章节再用。
 
+For cards with `must_cover`, the coverage unit is the item, not only the KP:
+
+- Cover each `must_cover[].item` or one of its `aliases` in the chapter prose, a generated SVG `<text>` label, key terms, examples, exercises, or a concise table.
+- Preserve the card's `structure_kind`: ordered chains should keep order; comparisons should keep compared objects and dimensions; state machines should keep states and transitions; formulas should keep variables and conditions.
+- If the card is useful but a specific item should not be expanded in this chapter, set `must_cover[j].deferred: true` and `defer_reason`. Do not use whole-card `deferred` for a single skipped item.
+- If all items in a card are irrelevant to this chapter, use `detail_cards[i].deferred: true` instead.
+
 ### 6. 桥接 retrieval_hooks
 
 为每个核心 KP，**补充** `retrieval_hooks.bridging`：
@@ -215,9 +223,20 @@ lab: null               # or labXX-slug if a lab is attached
 - ch08-memory-management — drafted   ← 新增/更新
 ```
 
-### 10. Finish the Job
+### 10. Run checks
 
-After all edits and before announcing success:
+```bash
+python3 scripts/check_kp_schema.py
+python3 scripts/check_chapter_frontmatter.py
+python3 scripts/check_detail_coverage.py
+python3 scripts/check_open_questions.py
+```
+
+All hard checks must pass before finishing the job. In particular, `check_detail_coverage.py` must pass before any KP is marked applied.
+
+### 11. Finish the Job
+
+After all edits and hard checks pass:
 
 ```bash
 python3 scripts/workflow_job.py finish \
@@ -228,16 +247,6 @@ python3 scripts/workflow_job.py finish \
 This auto-flips each KP `status: queued → applied`, clears `queue` and lock fields, appends `book/ch08-memory-management.md` to `applied_to`, and archives the job to `workflow-state.yaml.history`.
 
 **Do NOT** manually edit KP status fields. `workflow_job.py finish` is the only correct way.
-
-### 11. Run checks
-
-```bash
-python3 scripts/check_kp_schema.py
-python3 scripts/check_chapter_frontmatter.py
-python3 scripts/check_open_questions.py
-```
-
-All checks must pass (hard) before announcing success.
 
 ### 12. 报告
 
@@ -257,7 +266,7 @@ All checks must pass (hard) before announcing success.
 
 - ✅ `book/chNN-slug.md`（目标章）
 - ✅ `assets/figures/chNN-*.svg`（本章新增 figures）
-- ✅ `spec/knowledge-points.yaml`（**仅** `retrieval_hooks.bridging` 补充 + `detail_cards[i].deferred` 标记；status/queue/applied_to 由 workflow_job.py 管）
+- ✅ `spec/knowledge-points.yaml`（**仅** `retrieval_hooks.bridging` 补充、`detail_cards[i].deferred` 标记、`detail_cards[i].must_cover[j].deferred/defer_reason` 标记；status/queue/applied_to 由 workflow_job.py 管）
 - ✅ `spec/course-skeleton.md`（本章状态）
 - ✅ `spec/open-questions.md`
 - ❌ 其他章节文件

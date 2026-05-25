@@ -67,6 +67,13 @@ patch KP 与主稿哪个小节最紧密关联？
 
 **插入点要自然**：找一个原章节读起来"该展开但当时没展开"的位置。新内容应该让那个位置感觉"本来就该有"。
 
+If a patch KP has `detail_cards[].must_cover`, integrate at item granularity:
+
+- Cover each `must_cover[].item` or one of its `aliases` in the revised main chapter, the supplement, a generated SVG `<text>` label, key terms, examples, or exercises.
+- Preserve `structure_kind`: process/order, comparison dimensions, state transitions, formula variables/conditions, taxonomy levels, or case steps must not be flattened into a vague summary.
+- If a specific item is intentionally not expanded, set `must_cover[j].deferred: true` with `defer_reason`.
+- If the entire card is not appropriate for this chapter, set `detail_cards[i].deferred: true`.
+
 ### 3. 调整周边结构（如需）
 
 允许的微调：
@@ -145,9 +152,23 @@ patch KP 与主稿哪个小节最紧密关联？
 
 如果 patch 内容回答了某 OQ → 标 `状态: closed`、`关闭于: chMM`、`关闭 KP: <id>`、移到"已解决"段。
 
-### 7. Finish the Job
+### 7. Run checks
 
-After all edits and before announcing success:
+```bash
+python3 scripts/check_kp_schema.py
+python3 scripts/check_chapter_frontmatter.py
+python3 scripts/check_detail_coverage.py
+python3 scripts/check_open_questions.py
+```
+
+All hard checks must pass. Additionally verify:
+
+- Each KP with `reader_notice: published` (newly flipped) has a corresponding `book/supplements/chMM-*.md` file
+- Supplement files don't contain date/version markers (`v1`, `2026-`, `本次更新`)
+
+### 8. Finish the Job
+
+After all edits and hard checks pass:
 
 ```bash
 python3 scripts/workflow_job.py finish \
@@ -159,19 +180,6 @@ python3 scripts/workflow_job.py finish \
 This auto-flips each KP: `status: queued → applied`, `reader_notice: needed → published`, clears `queue` + lock, appends to `applied_to`.
 
 **Do NOT** manually edit KP status/reader_notice fields. Use `finish`.
-
-### 8. Run checks
-
-```bash
-python3 scripts/check_kp_schema.py
-python3 scripts/check_chapter_frontmatter.py
-python3 scripts/check_open_questions.py
-```
-
-All hard checks must pass. Additionally verify:
-
-- Each KP with `reader_notice: published` (newly flipped) has a corresponding `book/supplements/chMM-*.md` file
-- Supplement files don't contain date/version markers (`v1`, `2026-`, `本次更新`)
 
 ### 9. 报告给用户
 
@@ -192,6 +200,7 @@ All hard checks must pass. Additionally verify:
 - ✅ `book/chMM-slug.md`（目标章，可微调结构）
 - ✅ `book/supplements/chMM-<kp-slug>.md`
 - ✅ `assets/figures/chMM-*.svg`（若新 KP 需要图）
+- ✅ `spec/knowledge-points.yaml`（仅 `detail_cards[i].deferred` 与 `detail_cards[i].must_cover[j].deferred/defer_reason`）
 - ✅ `spec/open-questions.md`
 - ❌ 其他章节文件
 - ❌ source-index, terminology, style-guide, chapter-template

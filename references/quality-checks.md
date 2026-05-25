@@ -12,7 +12,7 @@ All scripts assume you're running from `<project-root>`. Scripts read their own 
 
 | Severity | Meaning |
 |---|---|
-| **hard** | Failure must stop the stage. Don't `workflow_job.py finish`; abort or fix first. |
+| **hard** | Failure must stop the stage. For Stage C/D, don't `workflow_job.py finish`; fix first. |
 | **soft** | Failure produces a warning. Report to user but proceed. |
 
 ## Script Map
@@ -20,8 +20,9 @@ All scripts assume you're running from `<project-root>`. Scripts read their own 
 | Script | When to run | Severity | What it validates |
 |---|---|---|---|
 | `inspect_state.py` | Every skill invocation, after every stage | (state report, not pass/fail) | Project state |
-| `check_kp_schema.py` | After A, B, C, D | **hard** | knowledge-points.yaml schema, status/queue rules, role/card type enums, id uniqueness |
+| `check_kp_schema.py` | After A, B, C, D | **hard** | knowledge-points.yaml schema, status/queue rules, role/card type enums, visual detail-card fields, id uniqueness |
 | `check_chapter_frontmatter.py` | After C, D | **hard** | Chapter file front-matter schema; coverage IDs match knowledge-points.yaml; forbidden tokens absent from prose |
+| `check_detail_coverage.py` | After C, D | **hard** | `detail_cards[].must_cover` items appear in chapter/supplement/SVG text unless explicitly deferred |
 | `check_open_questions.py` | After B, C, D | **soft** | open-questions.md structural; cross-refs to chapters/KPs |
 | `check_lab.py` | After lab module | **hard** for code labs (verify.sh must pass); **soft** for observation labs |
 
@@ -42,6 +43,8 @@ python3 scripts/check_kp_schema.py        # hard
 
 Hard failure here usually means the KP yaml was corrupted by partial write. Roll back if needed.
 
+Stage A may add visual audit fields on `detail_cards`: `visual_reviewed`, `review_risk_level`, `page_class`, `structure_kind`, `verified_items`, and `must_cover[].item/aliases/role/deferred/defer_reason`. If a project-local `check_kp_schema.py` rejects these fields, treat the script as stale and repair the schema checker; do not delete visual audit fields to make the check pass.
+
 ### After Stage B (Rebalance)
 
 ```bash
@@ -53,25 +56,29 @@ Validate that every queued KP has consistent `queue.action`, `queue.target`, `qu
 
 ### After Stage C (Write Chapter)
 
-`workflow_job.py finish` runs **before** checks; checks validate the post-finish state.
+Run hard checks before `workflow_job.py finish`; they validate the draft content while KPs are still locked. After finish, re-run `inspect_state.py --json` to confirm the job cleared.
 
 ```bash
 python3 scripts/check_kp_schema.py             # hard
 python3 scripts/check_chapter_frontmatter.py   # hard
+python3 scripts/check_detail_coverage.py       # hard
 python3 scripts/check_open_questions.py        # soft
 ```
 
 Hard fail patterns:
 
-- Coverage records reference KPs that aren't `status: applied` or don't include this chapter in `applied_to`
+- Coverage records reference unknown KP IDs, or project-local frontmatter checks find inconsistent KP/chapter links
 - Front-matter missing required fields
+- A covered KP has `detail_cards[].must_cover[].item` that does not appear in the chapter prose, matching supplement, or `assets/figures/chXX-*.svg` `<text>` labels, and is not explicitly deferred with `defer_reason`
 - Chapter file uses forbidden tokens: `defer`, `future-unknown`, `TODO`, `待补充`, `新增`
+- After these pass, run `workflow_job.py finish ...`, then `python3 scripts/inspect_state.py --json`
 
 ### After Stage D (Integrate Supplement)
 
 ```bash
 python3 scripts/check_kp_schema.py             # hard
 python3 scripts/check_chapter_frontmatter.py   # hard
+python3 scripts/check_detail_coverage.py       # hard
 python3 scripts/check_open_questions.py        # soft
 ```
 
@@ -79,6 +86,7 @@ Additionally check:
 
 - Each KP with `reader_notice: published` has a corresponding `book/supplements/chMM-*.md` file
 - Supplement files don't contain date/version markers (`v1`, `2026-`, `本次更新`)
+- After these pass, run `workflow_job.py finish ... --reader-notice published`, then `python3 scripts/inspect_state.py --json`
 
 ### After Lab Module
 
@@ -94,6 +102,7 @@ If `inspect_state.py` returns `actions: []` AND no workflow.current_job, run the
 python3 scripts/check_kp_schema.py
 python3 scripts/check_open_questions.py
 python3 scripts/check_chapter_frontmatter.py
+python3 scripts/check_detail_coverage.py
 python3 scripts/check_lab.py
 ```
 

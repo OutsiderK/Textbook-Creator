@@ -39,9 +39,9 @@ If interrupted mid-stage:
 
 ## Process
 
-### 1. Read the PPT (hybrid: text-first, then visual)
+### 1. Read the PPT (hybrid: text-first, risk-ranked visual)
 
-一份 PPT 通常 30–80 张幻灯片；整本视觉读会烧 50K–100K token。正确做法是**先用 pdfplumber 抓文本，再对图表页用 Read 工具视觉补全**。
+一份 PPT 通常 30–80 张幻灯片；整本视觉读会烧 50K–100K token。正确做法是**先用 pdfplumber 抓文本，再对图表页做风险排序后的视觉补全**。视觉补全使用当前环境可用的路径：能直接读取 PDF 页面就直接读；不能直接读时，先把目标页渲染成 PNG 再视觉复核。
 
 **1.1 — pdfplumber 骨架扫描（一次拿全文本 + 准确页号）**
 
@@ -58,34 +58,118 @@ with pdfplumber.open("sources/ppts/<file>.pdf") as pdf:
         print(text)
 ```
 
-这一步搞定 **~80% 的 KP 提取**：
+这一步搞定 **~80% 的 KP 提取**，并为视觉复核做页面审计：
 
 - 每个 KP 的 `concept`、`role` 判定
 - `detail_cards.type` ∈ {method, operation, exam_tip} 的 summary
 - `source.slides` 字段的精确填写
-- 标记好哪些 slide 含图（`[has images]`）供 1.2 用
+- 标记好每页的文本长度、图片/表格/公式/代码/图示迹象，供 1.2 风险分级用
 
-如果环境没 pdfplumber：`pip install pdfplumber`（也是 `/pdf` skill 推荐的栈）。退化方案用 `pypdf` 也行，但 pdfplumber 的 page.images 检测更准。
+如果环境没 pdfplumber：`pip install pdfplumber`（也是 `/pdf` skill 推荐的栈）。退化方案用 `pypdf` 也行，但 pdfplumber 的 page.images 检测更准。若没有 Poppler 命令（如 `pdftoppm`、`pdfinfo`、`pdfimages`），但有 PyMuPDF/fitz 和 Pillow，可用 PyMuPDF 渲染单页或 contact sheet 作为视觉复核输入。
 
-**1.2 — Read 工具对图表页做视觉补全**
+**1.2 — 页面风险分级：输出视觉复核队列**
 
-仅对 1.1 标了 `[has images]` 的 slide 用 Read 工具视觉读，捕捉 pdfplumber 抓不到的：
+对每页做跨学科风险判断。不要只依赖中文关键词；结合结构信号、英文标题、抽取异常和相邻页上下文。
 
-- `detail_cards.type=figure` 的内容（算法状态图、时序图、地址翻译图、磁盘结构图）
-- 复杂表格（pdfplumber 表格抽取在多列/合并单元格上经常错）
-- 视觉强调（颜色/框线/箭头表达的因果或对比）
+注意 PPT 母版背景、装饰图、页脚 logo 和重复模板元素会污染 `page.images` 信号：图片数量或面积只能作为候选证据，不能单独决定 high。若发现几乎所有页都有图片对象，应抽样渲染低分辨率缩略图/contact sheet，区分真正承载知识的流程图、表格、公式、截图与纯装饰背景。
 
-调用形式：`Read(file_path="sources/ppts/<file>.pdf", pages="12-14")` 精确读特定页范围。每次 Read 约 10K–30K token，**只读真有图的页**。
+结构信号：
 
-**1.3 — Sanity spot-check**
+- 低文本或空文本，但页面有可见内容。
+- 大图、多图、截图、扫描页、矢量框图、箭头、图表、曲线、表格、代码/命令块。
+- 公式/推导文本疑似乱序，或表格行列关系可能丢失。
+- 标题页/过渡页字体很大但内容很少；这类通常是 `section_divider`，只给相邻页提供上下文。
 
-随机抽 2–3 张（标题页 + 1–2 张中段）用 Read 视觉读一遍，校验你的 KP 提取是否反映幻灯实际内容。这一步抓三类问题：
+中英文词汇信号：
+
+- 中文：过程、流程、步骤、阶段、链路、机制、算法、模型、结构、架构、层次、组件、状态、转换、示意、对比、比较、分类、公式、推导、定理、证明、例题、案例、实验、装置、表。
+- English: process, procedure, workflow, pipeline, lifecycle, phase, stage, sequence, mechanism, algorithm, model, architecture, structure, hierarchy, framework, component, stack, layer, state, transition, diagram, comparison, compare, versus, vs, taxonomy, classification, formula, equation, derivation, theorem, proof, case, example, experiment, lab, table.
+
+给每页分配：
+
+- `risk_level`: `high | medium | low | section_divider`
+- `page_class`: `process_diagram | architecture_diagram | state_machine | comparison_table | formula_derivation | chart_or_plot | code_or_command | case_steps | taxonomy | table | screenshot_or_scanned | section_divider | text_dense | normal_text`
+
+默认策略：
+
+- `high` 页必须视觉复核。
+- `medium` 页默认不视觉复核；只有用户要求、抽查 medium 后发现漏点、或 high 页复核显示相邻 medium 页明显相关时，才升级复核。
+- `section_divider` 页只作为上下文，不单独视觉复核，除非它本身包含实质图表/流程/公式/表格。
+
+如果项目已有合适脚本，可写 `docs/page-risk-<batch>.yaml`。没有脚本时，也要在 `docs/ingest-<batch>.md` 写出同等信息：
+
+```yaml
+summary:
+  pdf: sources/ppts/<file>.pdf
+  pages_total: 79
+  high_count: 5
+  medium_count: 9
+  section_divider_count: 4
+review_queue:
+  - page: 18
+    priority: 1
+    risk_level: high
+    page_class: process_diagram
+    evidence: [low_text, large_image, keyword_process]
+    why_visual_needed: 纯文本只保留标题，流程节点和箭头方向在图中。
+    expected_extraction_focus:
+      - 节点、顺序、箭头方向、分支条件
+      - 图中具名实体和缩写
+false_positive_control:
+  section_dividers:
+    - page: 17
+      reason: 章节/小节过渡页，只为后续页提供上下文。
+  uncertain_sample:
+    - page: 42
+      reason: medium 风险表格页，若 high 页发现表格抽取丢行列关系再复核。
+```
+
+**1.3 — 只对 high 页做视觉补全**
+
+对 `review_queue` 中 `risk_level: high` 的页使用视觉读取，捕捉纯文本抓不到的：
+
+- 流程图：节点、顺序、箭头方向、分支条件。
+- 架构图：组件、层级、连接关系。
+- 状态图：状态、转换条件。
+- 表格/对照表：行列标题、比较维度、关键差异。
+- 公式推导：公式、变量、适用条件、推导结论。
+- 图表曲线：坐标轴、变量、趋势、拐点、结论。
+- 代码/命令：命令、参数、输出、执行顺序。
+- 案例/例题：步骤、已知条件、解题路径、结论。
+
+调用方式取决于当前工具环境。若有 PDF-native 视觉读取工具，精确读取 high 页范围；若没有，使用可用渲染器先把 high 页转成 PNG 再读取。可用的本地 fallback 是 PyMuPDF/fitz：
+
+```python
+from pathlib import Path
+import fitz
+
+pdf_path = Path("sources/ppts/<file>.pdf")
+out_dir = Path("tmp/page-review")
+out_dir.mkdir(parents=True, exist_ok=True)
+doc = fitz.open(str(pdf_path))
+for page_no in [12, 14, 18]:
+    page = doc[page_no - 1]
+    pix = page.get_pixmap(matrix=fitz.Matrix(2, 2), alpha=False)
+    pix.save(out_dir / f"{pdf_path.stem}-p{page_no:03d}.png")
+```
+
+每次视觉读取约 10K–30K token，**默认只读 high 页**。如果需要校正风险分级，可先渲染低分辨率 contact sheet，只判断版面和图表存在性，不提取图中文字细节。
+
+`medium` 页的升级规则：
+
+- 用户明确要求复核 medium 页。
+- high 页视觉复核显示该页与相邻 medium 页共同构成同一流程/公式/案例/表格。
+- 抽样 2–3 个 medium 页后发现文本抽取明显丢图中标签、公式结构、表格行列或箭头关系。
+
+**1.4 — Sanity spot-check**
+
+随机抽 2–3 张（标题页 + 1–2 张中段）用当前可用的视觉路径读一遍，校验你的 KP 提取是否反映幻灯实际内容。这一步抓三类问题：
 
 - pdfplumber 返回空（纯图片 slide）
 - 内容顺序判错
 - 视觉强调（如 ==考点==、红框、加粗箭头）在纯文本里丢了
 
-如果 spot-check 发现明显丢失，扩大相关区段的视觉读范围。
+如果 spot-check 发现明显丢失，优先扩大到相关 high 页；只有证据显示 medium 页也丢关键结构时，才复核 medium 页。
 
 ### 2. Extract KPs
 
@@ -144,6 +228,50 @@ Categories:
 - **exam_tip**: a likely exam pattern or trap (e.g., "考试常考 ==饿死== vs ==死锁== 区别")
 
 **保真原则**：尽量保留 PPT 中的应试细节。宁可多抓一张 card，写正文时再选用，不要因为"看着不重要"就扔掉。Stage C 和 D 会按需消费。
+
+For visually reviewed high-risk pages, use richer cards when the visual carries required details:
+
+```yaml
+- type: figure
+  summary: 引导过程图展示从上电到用户空间的控制转移。
+  source_slide: 18
+  visual_reviewed: true
+  review_risk_level: high
+  page_class: process_diagram
+  structure_kind: ordered_chain   # ordered_chain|comparison|state_machine|formula|taxonomy|process|case_steps|table|diagram
+  verified_items:
+    - Master Boot Record
+    - Stage 1 bootloader
+    - GRUB
+  must_cover:
+    - item: Master Boot Record
+      aliases: [MBR, 主引导记录]
+      role: node
+    - item: Stage 1 bootloader
+      aliases: [一级引导程序]
+      role: node
+    - item: GRUB
+      aliases: [Grand Unified Bootloader]
+      role: implementation
+```
+
+`must_cover` is cross-disciplinary. Use `item`, not `term`, because required details may be formulas, variables, steps, conditions, categories, rows/columns, case facts, or named entities.
+
+Use `must_cover` only for details that should survive into the textbook. Do not make every visible label mandatory. Prefer items that are exam-relevant, structurally necessary, or needed to understand a process/table/formula/case.
+
+Two defer levels are distinct:
+
+- `detail_cards[].deferred: true` means the whole card is not used in the current chapter.
+- `detail_cards[].must_cover[].deferred: true` means the card is used, but that specific item is intentionally not expanded; add `defer_reason`.
+
+Examples of `structure_kind` extraction focus:
+
+- `ordered_chain` / `process`: nodes, sequence, arrows, branch conditions.
+- `comparison` / `table`: compared objects, dimensions, key differences.
+- `state_machine`: states and transition conditions.
+- `formula`: formula, variables, assumptions, derivation result.
+- `taxonomy`: hierarchy and category boundaries.
+- `case_steps`: facts, steps, decision points, conclusion.
 
 ### 4. Augment existing KPs
 
