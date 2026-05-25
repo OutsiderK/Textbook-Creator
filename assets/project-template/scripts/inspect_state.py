@@ -6,7 +6,8 @@ from __future__ import annotations
 import argparse
 import json
 from collections import Counter, defaultdict
-from pathlib import Path
+from datetime import datetime, timezone
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from common import ROOT, knowledge_points, load_yaml, rel, source_index, workflow_state
@@ -14,6 +15,22 @@ from common import ROOT, knowledge_points, load_yaml, rel, source_index, workflo
 
 SOURCE_EXTS = {".ppt", ".pptx", ".pdf"}
 SOURCE_DIRS = ["PPTs", "sources/ppts", "sources/ppt", "sources"]
+
+STAGE_FROM_ACTION = {
+    "new_chapter": "write_chapter",
+    "patch_chapter": "integrate_supplement",
+}
+STAGE_SHORT_ID = {
+    "write_chapter": "write",
+    "integrate_supplement": "patch",
+}
+
+
+def derive_job_id(stage: str, target: str) -> str:
+    short = STAGE_SHORT_ID.get(stage, stage.replace("_", "-"))
+    slug = PurePosixPath(target).stem if target else "unknown"
+    date = datetime.now(timezone.utc).strftime("%Y%m%d")
+    return f"{short}-{slug}-{date}"
 
 
 def discover_source_files() -> list[str]:
@@ -52,12 +69,17 @@ def inspect() -> dict[str, Any]:
     notice_counts = Counter(str(kp.get("reader_notice", "none")) for kp in kps)
 
     queued_actions: dict[str, list[str]] = defaultdict(list)
+    queued_jobs: dict[tuple[str, str, str], list[str]] = defaultdict(list)
     locks: list[dict[str, str]] = []
     for kp in kps:
         kp_id = str(kp.get("id", "<missing-id>"))
         queue = kp.get("queue") or {}
         if kp.get("status") == "queued":
-            queued_actions[str(queue.get("action", "unspecified"))].append(kp_id)
+            action = str(queue.get("action", "unspecified"))
+            target = str(queue.get("target") or "")
+            batch = str(queue.get("batch") or "")
+            queued_actions[action].append(kp_id)
+            queued_jobs[(action, target, batch)].append(kp_id)
         if kp.get("locked_by"):
             locks.append(
                 {
@@ -97,22 +119,35 @@ def inspect() -> dict[str, Any]:
                 "reason": f"{status_counts['pool']} knowledge point(s) are in pool",
             }
         )
-    if queued_actions:
-        for action, ids in sorted(queued_actions.items()):
-            if action == "new_chapter":
-                stage = "write_chapter"
-            elif action == "patch_chapter":
-                stage = "integrate_supplement"
-            elif action == "hold":
+    if queued_jobs:
+        for (action, target, batch), kp_ids in sorted(queued_jobs.items()):
+            if action == "hold":
                 # hold is a deliberate parking state; no next stage to propose
                 continue
-            else:
+            stage = STAGE_FROM_ACTION.get(action)
+            if not stage:
                 continue
+            suggested_job_id = derive_job_id(stage, target)
+            next_command = [
+                "python3", "scripts/workflow_job.py", "start",
+                "--id", suggested_job_id,
+                "--stage", stage,
+                "--target", target,
+                "--batch", batch,
+                "--queue-action", action,
+                "--kps", *kp_ids,
+            ]
+            reason_target = target or "<missing target>"
             actions.append(
                 {
                     "stage": stage,
-                    "reason": f"{len(ids)} queued KP(s) for {action}",
-                    "kp_ids": ids,
+                    "reason": f"{len(kp_ids)} queued KP(s) for {action} -> {reason_target}",
+                    "kp_ids": kp_ids,
+                    "target": target,
+                    "batch": batch,
+                    "queue_action": action,
+                    "suggested_job_id": suggested_job_id,
+                    "next_command": next_command,
                 }
             )
     pending_supplements = [

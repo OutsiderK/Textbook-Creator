@@ -4,10 +4,12 @@
 from __future__ import annotations
 
 import argparse
+import subprocess
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
-from common import load_yaml, write_yaml
+from common import ROOT, load_yaml, write_yaml
 
 
 VALID_HOLD_REASON = {
@@ -15,9 +17,41 @@ VALID_HOLD_REASON = {
     "enrichment_only", "manual_review",
 }
 
+FINISH_GATE_CHECKS: dict[str, tuple[str, ...]] = {
+    "write_chapter": ("check_chapter_frontmatter.py",),
+    "integrate_supplement": ("check_chapter_frontmatter.py",),
+}
+
 
 def now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def run_gate_checks(scripts: tuple[str, ...]) -> tuple[bool, list[str]]:
+    """Run each checker as a subprocess; return (all_passed, captured_lines)."""
+    scripts_dir = Path(__file__).resolve().parent
+    all_ok = True
+    output_lines: list[str] = []
+    for script in scripts:
+        path = scripts_dir / script
+        output_lines.append(f"--- {script} ---")
+        if not path.exists():
+            output_lines.append(f"missing checker script: {path}")
+            all_ok = False
+            continue
+        proc = subprocess.run(
+            ["python3", str(path)],
+            capture_output=True,
+            text=True,
+            cwd=ROOT,
+        )
+        if proc.stdout:
+            output_lines.extend(proc.stdout.rstrip("\n").splitlines())
+        if proc.stderr:
+            output_lines.extend(proc.stderr.rstrip("\n").splitlines())
+        if proc.returncode != 0:
+            all_ok = False
+    return all_ok, output_lines
 
 
 def load_all() -> tuple[dict[str, Any], dict[str, Any]]:
@@ -97,6 +131,19 @@ def cmd_finish(args: argparse.Namespace) -> int:
     if not job or job.get("id") != args.id:
         print(f"ERROR: current_job is not {args.id!r}")
         return 1
+
+    stage = str(job.get("stage", ""))
+    gate_scripts = FINISH_GATE_CHECKS.get(stage)
+    if gate_scripts:
+        ok, output = run_gate_checks(gate_scripts)
+        for line in output:
+            print(line)
+        if not ok:
+            print()
+            print(f"ERROR: finish refused for job {args.id!r}: gate checks failed (see output above).")
+            print("Fix the reported issues, then re-run the same finish command.")
+            return 1
+
     for kp_id in job.get("kp_ids", []):
         kp = find_kp(kp_data["knowledge_points"], kp_id)
         if not kp:
