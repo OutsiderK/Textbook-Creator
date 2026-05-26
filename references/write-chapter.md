@@ -1,283 +1,345 @@
-# Reference: Stage C — Write Chapter
+# Reference: Stage C - Write Chapter
 
-Trigger: `inspect_state.py --json` reports queued KPs with `queue.action: new_chapter` AND one or more target chapters have all their queued KPs ready. Or user says "写第 N 章 / 生成 chXX".
+Trigger: `inspect_state.py --json` reports queued KPs with `queue.action: new_chapter` and a target chapter is ready, or the user explicitly says "写第 N 章 / 生成 chXX".
 
-> **Stage C 的座右铭：成书。** 写出的章节要让读者感觉是一本"已经打磨完成的书"的某一章，不出现任何工作流术语。诚实承认本章无法深入的内容，但用自然散文表达。
+> **Stage C 的座右铭：成书。** 写出的章节要像一本已经打磨完成的教材：自然、连贯、可扫读、有结构图表，不出现工作流术语。
 
 ## Input
 
-- `spec/knowledge-points.yaml`（特别是 `queue.action: new_chapter` + `queue.target: book/chNN-...` 的 KP）
+- `spec/knowledge-points.yaml` - target queued KPs and their `detail_cards`
 - `spec/chapter-template.md`
 - `spec/style-guide.md`
+- `spec/reference-chapter.md`
+- `docs/reference-chapter-annotation.md` when you need to understand the exemplar
 - `spec/terminology.md`
-- `spec/course-skeleton.md`（看上一章 introduces / continues）
-- 上一章 `book/ch(N-1)-*.md` 的 front-matter（生成"上章回顾"用）
+- `spec/course-skeleton.md`
+- Previous chapter front matter, if present
 
 ## Output
 
-- `book/chNN-slug.md` —— 主稿，包含 front-matter 与正文
-- KP 状态翻转：由 `workflow_job.py finish` 完成 `status: queued → applied`、清掉 `queue` 字段、追加 `applied_to`
-- `spec/course-skeleton.md` —— 本章状态从 `drafted-pending` 改为 `drafted`
-- `spec/open-questions.md` —— 登记本章产生的新 OQ；勾选闭合的 OQ
+- `book/chNN-slug.md` - reader-facing chapter
+- `assets/figures/chNN-*.svg` - chapter figures, when the visual plan declares SVG output
+- `spec/visual-plans/<stem>.yaml` - auditable presentation contract
+- `spec/course-skeleton.md` - target chapter status updated to `drafted`
+- `spec/open-questions.md` - closed or newly registered OQs
+- KP status flips only through `workflow_job.py finish`
 
-**Do NOT touch**: source-index, terminology, style-guide, chapter-template, 任何其他章的文件。
+`<stem>` is derived exactly as:
+
+```python
+os.path.splitext(os.path.basename(target))[0]
+```
+
+For target `book/ch03-kernel-boundary-and-structure.md`, the visual plan path is `spec/visual-plans/ch03-kernel-boundary-and-structure.yaml`. All scripts and docs use this derivation.
+
+**Do NOT touch**: source-index, terminology, style-guide, chapter-template, unrelated chapters, or supplements.
 
 ## Start the Job
 
-Before any edits, lock the target KPs:
+Before edits, lock the target KPs:
 
 ```bash
 python3 scripts/workflow_job.py start \
-  --id ch08-write-003 \
+  --id write-ch08-memory-management-20260526 \
   --stage write_chapter \
   --target book/ch08-memory-management.md \
   --batch 003 \
   --queue-action new_chapter \
-  --kps OSPPT-CH08-PAGE-TABLE OSPPT-CH08-MULTILEVEL-PT ...
+  --kps OSPPT-CH08-PAGE-TABLE OSPPT-CH08-TLB
 ```
 
-This writes `spec/workflow-state.yaml.current_job` and sets `locked_by` on each KP. If a job is already active, the script refuses—abort it first if intended.
+If a job is active, resume or abort it before starting another job.
 
-### Recovery from interruption
+### Abort Semantics
 
-If `inspect_state.py` reports `workflow.current_job` matching this stage:
-- If `book/ch08-*.md` exists with substantial content → ask user 续写 or 重写
-- If file empty or absent → 从 template 重启
-- If user chooses to discard: `workflow_job.py abort --id <job-id> --to-status queued` rolls KPs back
+`workflow_job.py abort` does not delete the visual plan. If a plan exists, keep `status: draft`. On the next `start` for the same target, read the existing draft and decide whether to revise it or overwrite it.
 
-## Naming
+## Stage C Internal Order
 
-文件名：`chNN-slug.md`，slug 用短英文 kebab-case（如 `ch08-memory-management`）。
-- NN 是教科书章节号，由 Stage B 决定（不一定等于原 PPT 的章节号）。
-- slug 简洁、英文、kebab-case，用于跨章引用稳定。
+Do not split these into separate workflow jobs. They are the internal order of one `write_chapter` job.
 
-## Process
+### C.0 Visual and Presentation Plan
 
-### 1. Read inputs
+1. Read target KPs and all `detail_cards`.
+2. Create or update `spec/visual-plans/<stem>.yaml`.
+3. Every non-deferred card with `visual_reviewed: true`, `type: figure`, or non-empty `must_cover` must appear in the visual plan.
+4. For each planned card or group, decide representation: `svg`, `table`, `formula`, `steps`, `callout`, `prose`, or a list such as `[formula, steps, callout]`.
+5. Multiple cards may be grouped only when grouping improves reader understanding; grouped items require `reason`.
+6. `prose` is allowed only with a non-empty `reason`.
+7. Start with `status: draft`.
 
-读 target 章节的所有 queued KP（按 role 分类）：
-- `foundation` — 开篇问题与核心抽象的根据
-- `mechanism` — 主线展开的骨架
-- `method` — 具体步骤/技术
-- `example` — 例题素材
-- `formula` — 公式、定量关系
-- `pitfall` — 常见误区
-- `exam_pattern` — 考试出题模式
+### C.1 Prose Draft
 
-读 detail_cards（按 type）：
-- `method/example/operation/figure/exam_tip` —— 决定它们出现在正文哪里（主线、例题、常见误区、figure embed）
-- 带 `must_cover` 的 card —— 逐项决定落在正文、SVG 图、术语、例题或练习中；`item` 可是术语、公式、变量、条件、步骤、类别、表格维度或案例事实。
+Write natural textbook prose. Natural prose does not mean pure text:
 
-### 2. 决定叙事顺序
+- Paragraphs explain causes, tradeoffs, and narrative flow.
+- Figures preserve structure.
+- Tables preserve comparison and classification.
+- Formula blocks preserve quantitative relations.
+- Steps preserve order.
+- Callouts preserve key judgments and exam distinctions.
 
-骨架建议（不绝对）：
+### C.2 Structured Components
 
+Generate or revise the declared SVG/table/formula/steps/callout outputs. If the plan decision proves wrong while writing, revise the visual plan in place, then revise the chapter or asset. Do not force a bad figure just because the draft plan said `svg`.
+
+### C.3 Presentation Self-check
+
+Set the visual plan to `status: final` only after it matches the final chapter and assets. Run the self-check questions below before finish.
+
+### C.4 Finish
+
+Run checks or `workflow_job.py validate <target>`. Only call `workflow_job.py finish` after hard checks pass.
+
+## Visual Plan Schema
+
+Use `card_ref`, not array indexes.
+
+```yaml
+version: 1
+chapter: ch03-kernel-boundary-and-structure
+target: book/ch03-kernel-boundary-and-structure.md
+status: draft
+
+items:
+  - id: vp-ch03-001
+    kp: OSPPT-CH01-BOOT-AND-INIT
+    card_ref:
+      source_slide: 18
+      card_type: figure
+    visual_reviewed: true
+    page_class: process_diagram
+    structure_kind: ordered_chain
+    must_cover:
+      - BIOS / bootblocks
+      - Master Boot Record
+      - LILO / GRUB
+      - Linux
+      - User space
+    representation: [svg]
+    output:
+      svg: assets/figures/ch03-boot-chain.svg
+    placement:
+      markdown_after_heading: "3.1 从上电到用户空间"
+    reason: 引导链是控制转移顺序，流程图比纯散文更能保留结构。
+
+  - id: vp-ch03-002
+    group:
+      - kp: OSPPT-CH01-SYSCALL-LAYERING-PROCESS
+        card_ref:
+          source_slide: 52
+          card_type: figure
+      - kp: OSPPT-CH01-SYSCALL-LAYERING-PROCESS
+        card_ref:
+          source_slide: 53
+          card_type: figure
+    representation: [svg, callout]
+    output:
+      svg: assets/figures/ch03-syscall-boundary-callchain.svg
+      callout: "系统调用不是普通函数调用，因为它跨越用户态/核心态边界。"
+    reason: 两张图共同表达边界和调用链，合并能减少重复。
+
+  - id: vp-ch03-999
+    kp: EXAMPLE-KP
+    card_ref:
+      source_slide: 99
+      card_type: method
+    representation: [prose]
+    output:
+      prose: "这条方法只作为正文中的一句约束出现。"
+    reason: 该卡片只是普通术语提醒，没有独立结构。
 ```
-foundation 引入 → mechanism 展开 → method/operation 具体化 → example 验证 → formula/exam_pattern 提炼 → pitfall 收尾
-```
 
-但**主线由概念逻辑决定，不由 role 序号决定**。如果某个 example 比 mechanism 更适合做开篇钩子，就放前面。
+Within the same KP, `(source_slide, card_type)` should identify exactly one detail card. If a checker reports zero or multiple matches, refine the card metadata before finish.
 
-### 3. 应用模板
+## Structure Mapping
 
-读 `spec/chapter-template.md`，按结构生成：
+Use this default mapping unless the chapter context gives a better reason.
+
+| `structure_kind` / `page_class` | Default representation |
+|---|---|
+| `ordered_chain` | SVG flow, step diagram, or ordered steps |
+| `comparison` | Comparison table or two-column diagram |
+| `state_machine` | State diagram or state-event-transition table |
+| `formula` | Formula block + variable table + small example |
+| `architecture_diagram` | Layer/component diagram |
+| `table` / `comparison_table` | Markdown table; SVG only for complex layout |
+| `case_steps` | Steps table, timeline, or flow diagram |
+| `code_or_command` | Code block + call-chain explanation |
+| `chart_or_plot` | Simplified figure, data table, or conclusion callout |
+| `taxonomy` | Classification table or tree diagram |
+
+## Representation Checks
+
+All representation checks use a declared-output pattern. The visual plan declares exact text or paths; check scripts match substrings or file existence. They do not judge beauty or deep semantics.
+
+| representation | `output` field | Check method |
+|---|---|---|
+| `svg` | `output.svg: <path>` | File exists, chapter contains `![...](path)`, SVG `<text>` covers `must_cover` |
+| `table` | `output.table.headers: [...]` | A Markdown table exists; each header substring appears; table cells cover `must_cover` |
+| `formula` | `output.formula: "$$..LaTeX..$$"` | Chapter contains a `$$...$$` block with that exact substring; the formula block is adjacent to a variable table |
+| `steps` | `output.steps: ["step1", "step2"]` | An ordered list exists; every declared step substring appears |
+| `callout` | `output.callout: "text, <=120 chars"` | A `> **核心判断/易错点/常见误区/思维停顿**:` block contains the substring |
+| `prose` | `output.prose: "original sentence"` + `reason: "non-empty"` | Chapter body contains the substring and `reason` is non-empty |
+
+`must_cover` is not merely "appears somewhere". It must appear in the declared carrier: SVG text, table cells, formula-adjacent variable table, ordered steps, callout, code block, or justified prose.
+
+## Using Detail Cards
+
+- `figure` cards: default to structured representation, not necessarily one SVG per card.
+- `example` cards: use in examples, exercises, or worked examples.
+- `method` / `operation` cards: use as steps, tables, call chains, or concise prose.
+- `exam_tip` cards: consume via `==...==`, callout, or exercise.
+- Cards that are truly irrelevant to this chapter may be marked `detail_cards[i].deferred: true`.
+- A single skipped `must_cover` item must use `must_cover[j].deferred: true` and `defer_reason`.
+
+Bad:
 
 ```markdown
----
-chapter: ch08-memory-management
-title: <章节标题>
-order: 8
-assumes:                # 上游章节已 introduce 的概念 id
-  - ch07-introduces:文件存储抽象
-  - ch07-introduces:磁盘 I/O 模型
-introduces:             # 本章新引入的概念
-  - 多级页表
-  - TLB 与 page fault 协作
-  - ...
-continues:              # 由本章承接但不深入的概念
-  - 虚拟内存替换算法
-open_questions:         # 本章登记的 OQ
-  - OQ-004
-coverage:               # 本章覆盖的 KP id
-  - OSPPT-CH08-PAGE-TABLE
-  - ...
-source_batches: [003]
-lab: null               # or labXX-slug if a lab is attached
----
-
-# 第 8 章：<标题>
-
-## 学习目标
-
-(3-5 条具体目标，从 KP 的 concept 摘要得出)
-
-## 上章回顾
-
-(三条以内，激活前置知识。从 ch(N-1).introduces 取 3 条，**用一句话散文重写**，不是机械列点。)
-
-## 开篇问题
-
-(一个反直觉的、具体的问题/现象，由 foundation 类 KP 启发。**不允许定义开头**。)
-
-## 本章地图
-
-(一段自然散文，说明本章要解决什么；其中可以包含"本章先关注 X，至于 Y，要等到我们引入 Z 之后才能讲清楚"这样的边界说明——但**不允许**用 "defer/future-unknown/TODO" 等词。)
-
-## 正文
-
-(按"痛点 → 机制 → 例子 → 代价/边界"展开。每个核心 KP 至少有一个对应小节。)
-
-### 8.1 <小节名>
-
-...
-
-### 8.2 <小节名>
-
-...
-
-> **思维停顿**：(一个具体的概念问题，就近回答。1-2 次/章。)
-
-## 例题讲解
-
-(来自 detail_cards.type=example 的内容，给出完整解题过程。)
-
-## 常见误区
-
-(来自 detail_cards.type=exam_tip 的内容 + role=pitfall 的 KP，每条简洁说明并给出辨析。)
-
-## 本章小结
-
-(3-5 句话，复述驱动问题及本章答案。)
-
-## 关键术语
-
-(每条独立段落格式：`**中文术语（English term）** 一句话解释。`)
-
-## 练习与解答
-
-(2-5 题，每题就近给答案/解题路径。优先用 detail_cards 里的考题。)
-
-## 覆盖记录
-
-(列出本章覆盖的 KP id。机器可读，但放在章末不打扰读者阅读节奏。)
+The boot chain is explained only as one long paragraph.
 ```
 
-### 4. 散文化诚实
+Good:
 
-**禁止**在正文出现以下措辞：
-- `defer`、`future-unknown`、`TODO`、`待补充`
-- "本章无法回答"、"留给后续章节"（作为单独标题）
-- "(将在第 X 章中讲解)" 这类括号注释如果章号尚未确定
+```markdown
+![图 3-1：引导链](../assets/figures/ch03-boot-chain.svg)
+```
 
-**允许**的散文表达模式：
+with SVG labels containing `BIOS / bootblocks`, `Master Boot Record`, `LILO / GRUB`, `Linux`, and `User space`.
+
+## Emphasis and Exam Tips
+
+Use `==高亮==` only for exam-tip assertions, mandatory comparison pairs, and easy-to-confuse judgments.
+
+Bad:
+
+```markdown
+==复用是操作系统的基本特征==。
+```
+
+Good:
+
+```markdown
+复用包括 ==时分复用和空分复用==。
+```
+
+An `exam_tip` is consumed only if at least one is true:
+
+- A core assertion or core noun phrase from `summary` appears as `==...==`.
+- A core verb/noun phrase appears in a `> **易错点**` or `> **常见误区**` callout.
+- The assertion appears in an exercise or answer.
+
+## Narrative Order
+
+The usual skeleton is:
+
+```text
+foundation -> mechanism -> method/operation -> example -> formula/exam_pattern -> pitfall
+```
+
+But concept logic wins over role order. If an example is the best hook, use it early.
+
+## Template Use
+
+Use `spec/chapter-template.md` as a section scaffold, then adapt to the target chapter. Keep:
+
+- front matter with `coverage`
+- learning goals
+- prior-chapter recall when available
+- opening problem
+- chapter map
+- numbered body sections
+- examples, misconceptions, summary, key terms, exercises
+- coverage record
+
+## Natural Boundary Language
+
+Forbidden in reader-facing prose:
+
+- `defer`, `future-unknown`, `TODO`, `待补充`
+- "本章无法回答" as a heading or apology
+- speculative chapter-number notes such as "(将在第 X 章中讲解)" when X is not a real chapter id
+
+Allowed:
+
 - "我们这里先把 X 理解为 Y；至于 X 在并发场景下的更完整含义，等学了同步原语之后回头看会更自然些。"
 - "本章只关注 A 视角的 B；C 视角的同样问题会在引入 D 工具后变得清晰。"
-- "完整的算法分析需要 E 概念支撑，我们先用一个直观的例子建立感觉。"
 
-### 5. 使用 detail_cards
+## Retrieval Hooks
 
-写正文与例题时**主动消费** detail_cards：
-- `figure` 卡 → 在正文该位置生成对应 SVG（命名 `assets/figures/ch08-<concept>.svg`），用 Markdown 图片引用。
-- `example` 卡 → 进入"例题讲解"段。
-- `method` 卡 → 进入正文相应小节作为具体步骤说明。
-- `operation` 卡 → 工程师视角侧栏（可选）或正文具体步骤。
-- `exam_tip` 卡 → 优先进"常见误区"段。
+For each core KP, add useful `retrieval_hooks.bridging` entries:
 
-不允许把 detail_cards 整张吞掉而不用。如果某张卡确实不适合本章，**显式标记**到 KP 上：`detail_cards[i].deferred: true`，待 Stage D 或后续章节再用。
+- contrast with a previous chapter concept
+- prediction question pointing to a later section
+- cross-chapter application question
 
-For cards with `must_cover`, the coverage unit is the item, not only the KP:
+## Open Questions
 
-- Cover each `must_cover[].item` or one of its `aliases` in the chapter prose, a generated SVG `<text>` label, key terms, examples, exercises, or a concise table.
-- Preserve the card's `structure_kind`: ordered chains should keep order; comparisons should keep compared objects and dimensions; state machines should keep states and transitions; formulas should keep variables and conditions.
-- If the card is useful but a specific item should not be expanded in this chapter, set `must_cover[j].deferred: true` and `defer_reason`. Do not use whole-card `deferred` for a single skipped item.
-- If all items in a card are irrelevant to this chapter, use `detail_cards[i].deferred: true` instead.
+Read `spec/open-questions.md`.
 
-### 6. 桥接 retrieval_hooks
+- If this chapter answers an OQ, mark it closed and record chapter/KP.
+- If the chapter honestly opens a later-needed question, register a new OQ and list it in front matter.
 
-为每个核心 KP，**补充** `retrieval_hooks.bridging`：
-- 与前章某 KP 对比的迁移题
-- 引用本章后续小节的预测题
-- 跨章应用题
+## Course Skeleton
 
-这些会出现在练习区或本章/邻章的回顾段中。
+Update the target chapter from `drafted-pending` to `drafted` in `spec/course-skeleton.md`.
 
-### 7. 前置 KP 缺失的处理
+## Before Finish: Self-check
 
-如果某个概念本章一定要用但**没**前置 KP 支撑——**不要**在本章硬塞解释，**回 Stage B 检查是否应该把那个概念作为补丁加到前章**。这是单调积累原则的保护：不要让本章读起来流畅但实际把前章本该有的内容硬塞进来。
+Do not write these answers into the chapter. Ask yourself:
 
-### 8. 关闭和登记 open questions
+- Did every `visual_reviewed`, `figure`, or `must_cover` card appear in `spec/visual-plans/<stem>.yaml`?
+- Does each plan item use `card_ref`, and would it match exactly one card?
+- Did I group cards only when grouping improves understanding?
+- Did I revise the visual plan after changing a figure/table/callout decision?
+- Can a reader grasp the chapter skeleton by scanning headings, figures/tables, key terms, examples, and callouts?
+- Are `exam_tip` assertions consumed with `==...==`, callout, or exercise?
+- Did I avoid pure prose swallowing an ordered chain, comparison, state machine, formula, or architecture diagram?
+- Are SVG labels readable and do they contain the relevant `must_cover` items?
+- If a formula appears, did I include a variable table?
+- Is emphasis sparse enough to still mean something?
 
-读 `spec/open-questions.md`：
-- 如果本章 KP 回答了某条 open OQ → 在 OQ 条目下标 `状态: closed`、`关闭于: ch08`、`关闭 KP: <id>`、移到"已解决"段。
-- 如果本章引出了无法当章回答的问题（"我们这里先按 X 处理；完整故事在 Y 之后"）→ 登记新 OQ，并在 front-matter `open_questions` 添加 id。
+## Run Checks
 
-### 9. 更新 course-skeleton
+Prefer:
 
-把本章状态从 `drafted-pending` 改为 `drafted`：
-
-```markdown
-## 章节
-
-- ch01-introduction — 待写
-- ch07-storage-foundations — drafted
-- ch08-memory-management — drafted   ← 新增/更新
+```bash
+python3 scripts/workflow_job.py validate book/chNN-slug.md
 ```
 
-### 10. Run checks
+Or run the checks directly:
 
 ```bash
 python3 scripts/check_kp_schema.py
 python3 scripts/check_chapter_frontmatter.py
-python3 scripts/check_detail_coverage.py
+python3 scripts/check_detail_coverage.py book/chNN-slug.md
+python3 scripts/check_visual_assets.py book/chNN-slug.md
+python3 scripts/check_chapter_presentation.py book/chNN-slug.md
 python3 scripts/check_open_questions.py
 ```
 
-All hard checks must pass before finishing the job. In particular, `check_detail_coverage.py` must pass before any KP is marked applied.
+Hard checks must pass before finishing.
 
-### 11. Finish the Job
-
-After all edits and hard checks pass:
+## Finish the Job
 
 ```bash
 python3 scripts/workflow_job.py finish \
-  --id ch08-write-003 \
+  --id write-ch08-memory-management-20260526 \
   --applied-to book/ch08-memory-management.md
 ```
 
-This auto-flips each KP `status: queued → applied`, clears `queue` and lock fields, appends `book/ch08-memory-management.md` to `applied_to`, and archives the job to `workflow-state.yaml.history`.
+Do not manually edit KP `status`, `queue`, `locked_by`, `reader_notice`, or `applied_to`.
 
-**Do NOT** manually edit KP status fields. `workflow_job.py finish` is the only correct way.
+## Report
 
-### 12. 报告
-
-```
-已生成 ch08-memory-management 草稿 (book/ch08-memory-management.md):
-  - 覆盖 KP: 6 个
-  - 引入概念: 多级页表, TLB 协作, ...
-  - 新 OQ: 1 条 (OQ-005)
-  - 关闭 OQ: 1 条 (OQ-002)
-
-按你的设计，我已经在草稿正文里用自然散文交代了"完整虚拟内存替换算法在后续章节展开"。
-
-下一步? (按 inspect_state.py 提示)
-```
+Report the target, covered KP count, created visual plan path, created figures/tables/callouts, checks run, and next suggested action from `inspect_state.py`. Do not auto-chain the next stage.
 
 ## Write Boundaries
 
-- ✅ `book/chNN-slug.md`（目标章）
-- ✅ `assets/figures/chNN-*.svg`（本章新增 figures）
-- ✅ `spec/knowledge-points.yaml`（**仅** `retrieval_hooks.bridging` 补充、`detail_cards[i].deferred` 标记、`detail_cards[i].must_cover[j].deferred/defer_reason` 标记；status/queue/applied_to 由 workflow_job.py 管）
-- ✅ `spec/course-skeleton.md`（本章状态）
-- ✅ `spec/open-questions.md`
-- ❌ 其他章节文件
-- ❌ supplements
-- ❌ source-index, terminology, style-guide, chapter-template
-
-## Don't
-
-- 不要在正文写 "TODO / defer / 后续补充" 等工作流痕迹。
-- 不要在正文加日期或版本号。
-- 不要手动 flip KP `status: queued → applied` —— 用 `workflow_job.py finish`。
-- 不要写到读者真的无法读懂——如果某个概念本章一定要用但**没**前置 KP 支撑，**回 Stage B 看是否要 patch 前章**，而不是在本章硬塞解释。
-- 不要主动改 chapter-template.md 或 style-guide.md。它们是项目共享 spec。
-- 不要在 Stage C 同时写两章——一次只写一章，写完报告后由用户决定是否继续下一章。
+- OK: `book/chNN-slug.md`
+- OK: `assets/figures/chNN-*.svg`
+- OK: `spec/visual-plans/<stem>.yaml`
+- OK: `spec/knowledge-points.yaml` only for retrieval hooks and explicit card/item deferrals
+- OK: `spec/course-skeleton.md`
+- OK: `spec/open-questions.md`
+- Do not edit other chapters, supplements, source-index, terminology, style-guide, or chapter-template.

@@ -1,0 +1,57 @@
+Stage C creates an auditable textbook package, not only prose.
+
+Required reads before edits:
+- Skill reference: online-course-textbook/references/write-chapter.md
+- Project specs: spec/style-guide.md, spec/chapter-template.md, spec/reference-chapter.md
+
+Artifacts:
+- book/chNN-slug.md
+- assets/figures/chNN-*.svg when declared
+- spec/visual-plans/<stem>.yaml
+
+Visual plan:
+- <stem> = os.path.splitext(os.path.basename(target))[0]
+- Use spec/visual-plans/<stem>.yaml
+- Start as status: draft; finish as status: final
+- Keep draft plans after abort; revise or overwrite on resume
+- Use card_ref, not card_index
+- Every non-deferred visual_reviewed, figure, or must_cover card must be planned
+- representation may be a list: [svg, callout]
+- prose requires a non-empty reason
+- grouped cards require group[] and reason
+- C.1/C.2 may revise the plan; C.3 must match artifacts
+
+Default representations:
+- ordered_chain -> flow diagram or ordered steps
+- comparison -> comparison table
+- state_machine -> state diagram or state-event table
+- formula -> formula block plus variable table
+- architecture_diagram -> layer/component diagram
+- table/comparison_table -> Markdown table unless layout is complex
+- case_steps -> steps table or timeline
+- code_or_command -> code block plus call-chain explanation
+- taxonomy -> classification table or tree
+
+Declared-output checks:
+- svg: output.svg file exists, chapter embeds it, SVG text covers must_cover
+- table: output.table.headers match a Markdown table; cells cover must_cover
+- formula: output.formula matches a $$ block; adjacent variable table exists
+- steps: output.steps items match an ordered list
+- callout: output.callout appears in 核心判断/易错点/常见误区/思维停顿
+- prose: output.prose appears in chapter and reason is non-empty
+
+Presentation:
+- Natural prose is not pure text
+- Use ==...== for exam_tip assertions, key exam pairs, and easy-confusion judgments
+- Do not highlight ordinary definitions
+- Use **...** for first concepts, key terms, and callout titles
+- Use tables for comparison, classification, and variable explanations
+- Use SVG for structure, process, state, architecture, and complex relations
+- Put figures/tables/callouts where the reader first needs them
+- Do not force one SVG per figure card; force structure or justified prose
+- Do not insert empty ritual callouts or trivial tables
+
+Before finish:
+- Run python3 scripts/workflow_job.py validate <target>
+- Fix hard failures before finish
+- Soft warnings may proceed but should be reported

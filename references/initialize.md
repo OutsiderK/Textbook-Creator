@@ -20,24 +20,33 @@ The trailing `/.` copies template contents (not the directory itself) into `<pro
     workflow-state.yaml        # empty job state
     course-skeleton.md         # low-commitment TOC
     open-questions.md          # OQ tracker
+    visual-plans/              # per-chapter visual/presentation contracts
     terminology.md             # generic stub (edit per course)
     style-guide.md             # writing rules + forbidden token list
     chapter-template.md        # chapter section template
+    reference-chapter.md       # exemplar for visual density and components
+    quality-overrides.yaml     # legacy chapter skip list for presentation checks
     lab-policy.yaml            # enabled: undecided by default
     lab-template.md            # lab README template
   scripts/
+    _stage_c_checklist.txt
     inspect_state.py
     workflow_job.py
     check_kp_schema.py
     check_chapter_frontmatter.py
+    check_detail_coverage.py
+    check_visual_assets.py
+    check_chapter_presentation.py
     check_open_questions.py
     check_lab.py
     common.py
+  assets/figures/
   sources/ppts/                # user drops PPT/PDF here
   book/
     supplements/
   labs/
   docs/
+    reference-chapter-annotation.md
 ```
 
 Do not copy an existing course project as the default initialization path. Copying a real project is only appropriate when the user explicitly asks to fork or duplicate it.

@@ -1,106 +1,111 @@
 # Style Guide
 
-## Reader Contract
+This file is the project-local presentation checklist. Treat checklist items as rules for Stage C unless the chapter context clearly requires a documented exception in `spec/visual-plans/<stem>.yaml`.
 
-- The textbook should read like a coherent, polished book, even while the workflow is online and incremental.
-- The main chapter file is always the current best version. Supplement files are reader notices for people who already read an earlier version.
-- Do not expose workflow words in reader-facing chapter prose or supplements.
+## 写章节时必须做
 
-### Forbidden tokens (hard fail in checks)
+- [ ] 用自然散文解释因果、边界和权衡；不要把正文写成 bullet dump。
+- [ ] 有 `visual_reviewed: true`、`type: figure` 或 `must_cover` 的 card，必须在 visual plan 中有呈现决策。
+- [ ] `must_cover` 必须进入 visual plan 声明的载体；普通正文覆盖只在 `representation: [prose]` 且有 `reason` 时成立。
+- [ ] `exam_tip` 的核心断言必须用 `==...==`、callout 或练习/答案消费。
+- [ ] 公式必须配相邻变量说明表。
+- [ ] 比较、分类、状态、流程、架构优先使用表格、步骤、状态表或 SVG。
+- [ ] 图表和 callout 就近放在第一次需要它的位置。
+- [ ] 每个图前后至少有一句说明它解决什么阅读问题。
+- [ ] 章节读起来像成书，不暴露工作流、更新痕迹或内部状态词。
 
-These tokens must NOT appear in `book/**/*.md`:
+## 强调
+
+- [ ] `==...==` 只用于 `exam_tip`、必考并列项、关键判别和易混判断。
+- [ ] `**...**` 只用于概念首次出现、关键术语、关键断言和 callout 标题。
+- [ ] 不整段高亮，不连续多段高亮，不用高亮标普通定义。
+- [ ] 不为了过检查塞空洞 callout；callout 必须帮助辨析、判断或迁移。
+
+Bad:
+
+```markdown
+==复用是操作系统的基本特征==。
+```
+
+Good:
+
+```markdown
+复用包括 ==时分复用和空分复用==。
+```
+
+## 图表
+
+- [ ] 图负责保留结构：流程、架构、状态、层次、复杂关系。
+- [ ] 表负责比较、分类、变量解释和判别清单。
+- [ ] 公式块负责定量关系，变量表负责符号含义与条件。
+- [ ] 步骤表或有序列表负责顺序，不把 3 步以上流程吞进长段落。
+- [ ] 多个视觉 card 可以合并，但 visual plan 必须写 `group` 和 `reason`。
+- [ ] 不强制每张 figure card 单独生成 SVG；强制的是结构化呈现或有理由的 prose。
+
+## Callout
+
+Use these labels exactly so checks and readers can recognize them:
+
+```markdown
+> **核心判断**：...
+```
+
+```markdown
+> **易错点**：...
+```
+
+```markdown
+> **常见误区**：...
+```
+
+```markdown
+> **思维停顿**：...
+```
+
+## 公式
+
+Formula block:
+
+```markdown
+$$
+CPU\ Utilization = 1 - p^n
+$$
+```
+
+Adjacent variable table:
+
+```markdown
+| 符号 | 含义 |
+|---|---|
+| `p` | 单道程序等待 I/O 的时间比例 |
+| `n` | 内存中的程序道数 |
+```
+
+## 概念对照表
+
+```markdown
+| 概念 | 关注点 | 常见误区 |
+|---|---|---|
+| 并发 | 同一时间间隔内推进 | 不等于同一时刻同时执行 |
+| 并行 | 同一时刻同时执行 | 是并发的更严格情形 |
+```
+
+## Forbidden Tokens
+
+These tokens must not appear in reader-facing `book/**/*.md` prose:
 
 - `defer`, `future-unknown`, `future_unknown`
 - `TODO`, `FIXME`, `XXX`
+- `pool`, `queued`, `rebalance`, `workflow`
 - `待补充`, `待完善`, `待定`
 - `新增`, `本次新增`, `本次补充`, `本次更新`
-- `v1`, `v2`, `v1.0`, version markers like `2026-`, `2025-` in chapter prose
-- `(将在第 X 章中讲解)` if X is not yet a real chapter id
+- `v1`, `v2`, `v1.0`, version markers such as `2026-`, `2025-`
+- speculative notes such as `(将在第 X 章中讲解)` when X is not a real chapter id
 
-The check script `check_chapter_frontmatter.py` scans for these.
+## Natural Boundary Language
 
-### Natural boundary language (preferred)
-
-When a chapter cannot cover something deeply yet, say it as part of the narrative:
+Use boundary language as part of the reader's learning path:
 
 - "我们这里先把 X 理解为 Y；至于 X 在并发场景下的更完整含义，等学了同步原语之后回头看会更自然些。"
 - "本章只关注 A 视角的 B；C 视角的同样问题会在引入 D 工具后变得清晰。"
 - "完整的算法分析需要 E 概念支撑，我们先用一个直观的例子建立感觉。"
-
-The signal: the boundary is described as something the **reader** experiences, not something the **author** owes.
-
-## Learning Design
-
-The textbook structure encodes specific cognitive-science principles. Don't drop them just because a chapter feels thin.
-
-| Section | Principle |
-|---|---|
-| 上章回顾 | Prior-knowledge activation; spaced retrieval |
-| 开篇问题 | Anchored instruction / motivating hook |
-| 本章地图 | Metacognitive signposting |
-| 正文 (痛点→机制→例子→边界) | Worked-example pattern; manage cognitive load |
-| 思维停顿 (1-2/章) | Metacognitive prompt; near-transfer recall |
-| 例题讲解 | Worked example (Sweller); shows steps not just answer |
-| 常见误区 | Misconception preemption |
-| 关键术语 中英双语 | Bilingual reinforcement; helps switch between courseware and English literature |
-| 练习与解答 (with retrieval_hooks.bridging) | Retrieval practice; near + far transfer |
-
-## Chapter Writing
-
-- Start from a concrete problem, surprising behavior, or motivating question. **Do NOT open with a definition.**
-- Prefer the pattern: pain point → idea → mechanism → example → cost or boundary.
-- Keep important PPT details (`detail_cards`) when they support exams or understanding: methods, tricks, operation steps, examples, diagrams, formulas, common pitfalls. Cards not used must be explicitly marked `deferred: true`.
-- Preserve mature book feel: no dated update boxes, no "newly added" markers.
-
-### Emphasis levels
-
-Use sparingly; consistent meaning:
-
-| Mark | Meaning |
-|---|---|
-| `**加粗**` | Concept introduction or key claim |
-| `*斜体*` | Technical term in flow, secondary emphasis |
-| `==高亮==` | Exam point worth memorizing (from `detail_cards.type=exam_tip`) |
-| `> 引用` | Sidebar, definition box, or 思维停顿 |
-| `` `代码` `` | Identifiers, file names, shell commands |
-
-### Diagram triggers (SVG)
-
-Generate an SVG figure when ANY of these is true (and there's a `detail_cards.type=figure` for it):
-
-- The reader must track 3+ simultaneous states or fields
-- Sequential timing or async ordering matters (use a timing diagram)
-- Hierarchy or addressing levels (3+ levels) — use a tree/box diagram
-- A table would have 5+ rows × 3+ columns of structured relations — consider visualizing
-- The original PPT clearly relies on a figure that prose alone won't reproduce
-
-File naming: `assets/figures/chNN-<concept>.svg`. Embed via standard Markdown image syntax.
-
-If the figure is decorative or trivial, prose is fine.
-
-## Rebalance Principles
-
-- PPT order is a weak prior, not a chapter boundary.
-- Chapter boundaries should primarily follow knowledge coherence: shared problem, shared mechanism, prerequisites, examples, narrative flow.
-- Quantitative KP thresholds are guardrails: 5-9 core KP is usually comfortable; more than 9 requires split review; fewer than 5 requires merge or wait review.
-- Heavy mechanisms or algorithms may justify a chapter even with few KP.
-- See `references/rebalance.md` "Seven Questions" for the full decision frame.
-
-## Supplement Style
-
-Supplements are not "release notes." They read like depth materials that were always there:
-
-- Title uses the knowledge-point name, not "update X" or a version label.
-- No dates, no version numbers, no "本次更新".
-- The "建议已读者" section gives a concrete re-read path: "只需补读 X.Y.Z 节，并回看「<相关小节>」末段"。
-
-## Lab Principles
-
-- Lab design is controlled by `spec/lab-policy.yaml`.
-- Lab questions and environments must be selected for the course subject, not copied from a generic checklist.
-- If labs are enabled, a lab should clarify or test a core mechanism, not sit as an unrelated appendix.
-- Runnable labs need starter, reference solution, tests or verification, and clear expected observations.
-- TODO mapping by `preferences.course_focus`:
-  - `mechanism_understanding` → KP with `role: mechanism`
-  - `exam_drill` → KP with `detail_cards.type: exam_tip` or `role: exam_pattern`
-  - `engineering_practice` → KP with `detail_cards.type: operation`

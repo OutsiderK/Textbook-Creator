@@ -1,0 +1,6 @@
+version: 1
+legacy_chapters:
+  # List chapter paths (book/chNN-slug.md) that pre-date the visual-plan era.
+  # check_visual_assets.py and check_chapter_presentation.py will SKIP these with a WARNING.
+  # Track migration debt in TODO/issue tracker.
+  []

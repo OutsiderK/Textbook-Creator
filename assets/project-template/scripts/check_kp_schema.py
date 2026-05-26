@@ -27,7 +27,8 @@ VALID_PAGE_CLASS = {
 }
 VALID_STRUCTURE_KIND = {
     "ordered_chain", "comparison", "state_machine", "formula",
-    "taxonomy", "process", "case_steps", "table", "diagram",
+    "architecture_diagram", "comparison_table", "taxonomy", "process",
+    "case_steps", "table", "diagram", "code_or_command", "chart_or_plot",
 }
 VALID_HOLD_REASON = {
     "awaiting_followup", "bridging_undefined",
