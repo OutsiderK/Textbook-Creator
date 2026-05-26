@@ -209,7 +209,23 @@ with SVG labels containing `BIOS / bootblocks`, `Master Boot Record`, `LILO / GR
 
 ## Emphasis and Exam Tips
 
-Use `==高亮==` only for exam-tip assertions, mandatory comparison pairs, and easy-to-confuse judgments.
+Emphasis is an attention budget. Before adding any marker, decide:
+
+1. **Is this a structural relation?** (flow, comparison, state, classification, layered architecture, variable relations)
+   → Use figure, table, formula, or ordered steps — not emphasis.
+
+2. **Is this a judgment readers must remember, or an easy-to-confuse pair?**
+   → Use `==高亮==`, a `> **核心判断/易错点/常见误区**` callout, or consume in an exercise.
+
+3. **Is this a local keyword, condition, limit, or counterpoint the reader should briefly notice?**
+   → Use `<u>下划线</u>`, or just plain prose.
+
+Hard constraints:
+
+- `<u>...</u>` **cannot** substitute for `exam_tip` consumption. Highlight, callout, or exercise remains the only valid consumption.
+- `==...==` wraps the judgment core only, not the long definition around it. Compress the sentence first, then mark.
+- Do not stack multiple markers in one clause. If a clause needs both `**term**` and `==judgment==`, split the clause.
+- `**term**` vs `<u>keyword</u>`: `**` introduces or anchors a term being defined; `<u>` flags a known term's role in the current sentence (condition, limit, contrast). When in doubt, no marker.
 
 Bad:
 
@@ -221,6 +237,7 @@ Good:
 
 ```markdown
 复用包括 ==时分复用和空分复用==。
+分时系统关心的是 <u>交互响应时间</u>，而不是单纯提高吞吐量。
 ```
 
 An `exam_tip` is consumed only if at least one is true:
@@ -228,6 +245,8 @@ An `exam_tip` is consumed only if at least one is true:
 - A core assertion or core noun phrase from `summary` appears as `==...==`.
 - A core verb/noun phrase appears in a `> **易错点**` or `> **常见误区**` callout.
 - The assertion appears in an exercise or answer.
+
+See `spec/style-guide.md` for the full visual emphasis tier table.
 
 ## Narrative Order
 

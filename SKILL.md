@@ -193,6 +193,8 @@ Main chapters must read like a polished textbook. Do not expose workflow vocabul
 
 `check_chapter_frontmatter.py` scans for forbidden tokens; chapter completion fails if any are present.
 
+**Visual emphasis is an attention budget.** Reserve `==高亮==` for judgment cores readers must remember; use `<u>下划线</u>` for short conditions, limits, or in-sentence keywords; carry structural relations (flow, comparison, state, classification) in figures, tables, formulas, or steps — not in emphasis markup. Full tier table and decision rules live in `spec/style-guide.md` and `references/write-chapter.md`.
+
 ## Visual Review Policy
 
 Stage A must treat source PDFs/PPTs as mixed text-and-visual artifacts. Text extraction is a skeleton, not proof of coverage.
