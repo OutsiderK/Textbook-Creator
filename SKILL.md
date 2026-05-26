@@ -11,6 +11,22 @@ Use this skill for building a textbook from an ongoing course where PPTs arrive 
 
 The skill has one public interface. Do not ask the user to invoke internal stages. Route their natural request to the right stage after inspecting project state.
 
+## Required Reads Per Stage
+
+These are routing pointers, not the detailed rules. Load only the files needed for the active stage.
+
+| Stage | MUST read before edits |
+|---|---|
+| Init | `references/initialize.md` |
+| Stage A (Ingest) | `references/ingest.md` |
+| Stage B (Rebalance) | `references/rebalance.md` |
+| Stage C (Write) | `references/write-chapter.md`, project `spec/style-guide.md`, project `spec/chapter-template.md`, project `spec/reference-chapter.md` |
+| Stage D (Integrate Supplement) | `references/integrate-supplement.md` |
+| Lab | `references/lab-policy-and-design.md` |
+| Checks | `references/quality-checks.md` |
+
+Stage C must create or update `spec/visual-plans/chNN-slug.yaml` before finish. The exact path is derived from the target chapter stem.
+
 ## The Core Principles (always apply)
 
 1. **单调积累** — 已有知识点不推翻，只扩展、连接、细化。
@@ -177,6 +193,8 @@ Main chapters must read like a polished textbook. Do not expose workflow vocabul
 
 `check_chapter_frontmatter.py` scans for forbidden tokens; chapter completion fails if any are present.
 
+**Visual emphasis is an attention budget.** Reserve `==高亮==` for judgment cores readers must remember; use `<u>下划线</u>` for short conditions, limits, or in-sentence keywords; carry structural relations (flow, comparison, state, classification) in figures, tables, formulas, or steps — not in emphasis markup. Full tier table and decision rules live in `spec/style-guide.md` and `references/write-chapter.md`.
+
 ## Visual Review Policy
 
 Stage A must treat source PDFs/PPTs as mixed text-and-visual artifacts. Text extraction is a skeleton, not proof of coverage.
@@ -208,7 +226,7 @@ Each stage may only modify the files its reference document declares:
 - **Stage Init** — `spec/*` (template files from `<skill-dir>/assets/project-template/`)
 - **Stage A (Ingest)** — `spec/knowledge-points.yaml` (append), `spec/source-index.yaml`, `docs/ingest-<batch>.md`, optional `docs/page-risk-<batch>.yaml`
 - **Stage B (Rebalance)** — `spec/knowledge-points.yaml` (status/queue/reader_notice flips), `spec/course-skeleton.md`, `spec/open-questions.md`, `docs/rebalance-<batch>.md`
-- **Stage C (Write)** — `book/chNN-slug.md`, `assets/figures/chNN-*.svg`, `spec/knowledge-points.yaml` (only `retrieval_hooks.bridging`, `detail_cards[i].deferred`, and `detail_cards[i].must_cover[j].deferred/defer_reason` — other fields via `workflow_job`), `spec/course-skeleton.md`, `spec/open-questions.md`
+- **Stage C (Write)** — `book/chNN-slug.md`, `assets/figures/chNN-*.svg`, `spec/visual-plans/chNN-slug.yaml`, `spec/knowledge-points.yaml` (only `retrieval_hooks.bridging`, `detail_cards[i].deferred`, and `detail_cards[i].must_cover[j].deferred/defer_reason` — other fields via `workflow_job`), `spec/course-skeleton.md`, `spec/open-questions.md`
 - **Stage D (Integrate Supplement)** — `book/chMM-slug.md`, `book/supplements/chMM-*.md`, `assets/figures/chMM-*.svg`, `spec/knowledge-points.yaml` (only `detail_cards[i].deferred` and `detail_cards[i].must_cover[j].deferred/defer_reason` — status/reader_notice via `workflow_job`), `spec/open-questions.md`
 - **Lab** — `labs/labXX-slug/*`, `spec/lab-policy.yaml` (init only)
 

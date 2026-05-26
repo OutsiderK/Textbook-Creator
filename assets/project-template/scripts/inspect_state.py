@@ -60,6 +60,7 @@ def inspect() -> dict[str, Any]:
     kps = knowledge_points()
     state = workflow_state()
     lab_policy = load_yaml("spec/lab-policy.yaml", {"enabled": "missing"})
+    quality_overrides = load_yaml("spec/quality-overrides.yaml", {"legacy_chapters": []})
 
     discovered = discover_source_files()
     indexed = indexed_sources(index)
@@ -91,6 +92,11 @@ def inspect() -> dict[str, Any]:
 
     chapters = sorted(rel(path) for path in (ROOT / "book").glob("ch*.md"))
     supplements = sorted(rel(path) for path in (ROOT / "book" / "supplements").glob("*.md"))
+    legacy_chapters = [
+        str(path)
+        for path in quality_overrides.get("legacy_chapters", []) or []
+        if isinstance(path, str)
+    ]
 
     current_job = state.get("current_job")
     interrupted = bool(current_job or locks)
@@ -180,6 +186,7 @@ def inspect() -> dict[str, Any]:
             "locks": locks,
         },
         "chapters": chapters,
+        "legacy_chapters": legacy_chapters,
         "supplements": supplements,
         "lab_policy": lab_policy.get("enabled", "missing"),
         "workflow": {
@@ -204,6 +211,7 @@ def print_text(report: dict[str, Any]) -> None:
         for lock in kp["locks"]:
             print(f"  - {lock['kp']} locked_by={lock['locked_by']} target={lock['target']}")
     print(f"Chapters: {len(report['chapters'])}; Supplements: {len(report['supplements'])}")
+    print(f"Legacy chapters (no visual-plan): {len(report.get('legacy_chapters', []))}")
     print(f"Lab policy: {report['lab_policy']}")
     if report["workflow"]["current_job"]:
         print(f"Current job: {report['workflow']['current_job']}")
@@ -233,4 +241,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="260" viewBox="0 0 760 260" role="img" aria-labelledby="title desc">
+  <title id="title">Queue length state transition</title>
+  <desc id="desc">Queue length increases on arrival and decreases on service completion.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#3d5a80"/>
+    </marker>
+  </defs>
+  <rect x="1" y="1" width="758" height="258" rx="8" fill="#f8fafc" stroke="#cbd5e1"/>
+  <text x="380" y="36" text-anchor="middle" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#0f172a">队列长度的状态转换</text>
+
+  <rect x="72" y="98" width="150" height="72" rx="8" fill="#e0f2fe" stroke="#0284c7" stroke-width="2"/>
+  <text x="147" y="127" text-anchor="middle" font-family="Arial, sans-serif" font-size="17" font-weight="700" fill="#0f172a">状态 n</text>
+  <text x="147" y="151" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#334155">队列中有 n 个任务</text>
+
+  <rect x="536" y="98" width="150" height="72" rx="8" fill="#dcfce7" stroke="#16a34a" stroke-width="2"/>
+  <text x="611" y="127" text-anchor="middle" font-family="Arial, sans-serif" font-size="17" font-weight="700" fill="#0f172a">状态 n+1</text>
+  <text x="611" y="151" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#334155">到达后队列变长</text>
+
+  <path d="M228 120 C320 70, 438 70, 530 120" fill="none" stroke="#3d5a80" stroke-width="3" marker-end="url(#arrow)"/>
+  <text x="379" y="82" text-anchor="middle" font-family="Arial, sans-serif" font-size="15" font-weight="700" fill="#1e3a8a">顾客到达：n -> n+1</text>
+
+  <path d="M530 150 C438 206, 320 206, 228 150" fill="none" stroke="#3d5a80" stroke-width="3" marker-end="url(#arrow)"/>
+  <text x="379" y="217" text-anchor="middle" font-family="Arial, sans-serif" font-size="15" font-weight="700" fill="#1e3a8a">服务完成：n+1 -> n</text>
+
+  <rect x="278" y="112" width="204" height="46" rx="6" fill="#fff7ed" stroke="#f97316"/>
+  <text x="380" y="140" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#7c2d12">边界：空队列不能再减</text>
+</svg>

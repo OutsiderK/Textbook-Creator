@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Start, finish, or abort resumable workflow jobs."""
+"""Start, finish, validate, or abort resumable workflow jobs."""
 
 from __future__ import annotations
 
 import argparse
+import os
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
@@ -17,9 +18,23 @@ VALID_HOLD_REASON = {
     "enrichment_only", "manual_review",
 }
 
-FINISH_GATE_CHECKS: dict[str, tuple[str, ...]] = {
-    "write_chapter": ("check_chapter_frontmatter.py",),
-    "integrate_supplement": ("check_chapter_frontmatter.py",),
+WRITE_CHAPTER_CHECKS = (
+    ("check_kp_schema.py", ()),
+    ("check_chapter_frontmatter.py", ()),
+    ("check_detail_coverage.py", ("{target}",)),
+    ("check_visual_assets.py", ("{target}",)),
+    ("check_chapter_presentation.py", ("{target}",)),
+    ("check_open_questions.py", ()),
+)
+
+FINISH_GATE_CHECKS: dict[str, tuple[tuple[str, tuple[str, ...]], ...]] = {
+    "write_chapter": WRITE_CHAPTER_CHECKS,
+    "integrate_supplement": (
+        ("check_kp_schema.py", ()),
+        ("check_chapter_frontmatter.py", ()),
+        ("check_detail_coverage.py", ("{target}",)),
+        ("check_open_questions.py", ()),
+    ),
 }
 
 
@@ -27,20 +42,31 @@ def now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-def run_gate_checks(scripts: tuple[str, ...]) -> tuple[bool, list[str]]:
+def visual_plan_path_for_target(target: str) -> str:
+    stem = os.path.splitext(os.path.basename(target))[0]
+    return f"spec/visual-plans/{stem}.yaml"
+
+
+def format_check_args(args: tuple[str, ...], target: str) -> list[str]:
+    return [arg.replace("{target}", target) for arg in args]
+
+
+def run_gate_checks(checks: tuple[tuple[str, tuple[str, ...]], ...], target: str) -> tuple[bool, list[str]]:
     """Run each checker as a subprocess; return (all_passed, captured_lines)."""
     scripts_dir = Path(__file__).resolve().parent
     all_ok = True
     output_lines: list[str] = []
-    for script in scripts:
+    for script, script_args in checks:
         path = scripts_dir / script
-        output_lines.append(f"--- {script} ---")
+        rendered_args = format_check_args(script_args, target)
+        suffix = f" {' '.join(rendered_args)}" if rendered_args else ""
+        output_lines.append(f"--- {script}{suffix} ---")
         if not path.exists():
             output_lines.append(f"missing checker script: {path}")
             all_ok = False
             continue
         proc = subprocess.run(
-            ["python3", str(path)],
+            ["python3", str(path), *rendered_args],
             capture_output=True,
             text=True,
             cwd=ROOT,
@@ -52,6 +78,20 @@ def run_gate_checks(scripts: tuple[str, ...]) -> tuple[bool, list[str]]:
         if proc.returncode != 0:
             all_ok = False
     return all_ok, output_lines
+
+
+def print_stage_c_start_checklist(target: str) -> None:
+    checklist = Path(__file__).resolve().parent / "_stage_c_checklist.txt"
+    print(f"Stage C target: {target}")
+    print(f"Visual plan path: {visual_plan_path_for_target(target)}")
+    print()
+    print("=== STAGE C CHECKLIST (must satisfy before finish) ===")
+    if checklist.exists():
+        print(checklist.read_text(encoding="utf-8").rstrip())
+    else:
+        print("MUST read online-course-textbook/references/write-chapter.md before edits.")
+        print("MUST create/update the target visual plan before finish.")
+    print("=== END ===")
 
 
 def load_all() -> tuple[dict[str, Any], dict[str, Any]]:
@@ -122,6 +162,8 @@ def cmd_start(args: argparse.Namespace) -> int:
     write_yaml("spec/workflow-state.yaml", state)
     write_yaml("spec/knowledge-points.yaml", kp_data)
     print(f"OK: started job {args.id}")
+    if args.stage == "write_chapter":
+        print_stage_c_start_checklist(args.target)
     return 0
 
 
@@ -133,16 +175,24 @@ def cmd_finish(args: argparse.Namespace) -> int:
         return 1
 
     stage = str(job.get("stage", ""))
-    gate_scripts = FINISH_GATE_CHECKS.get(stage)
-    if gate_scripts:
-        ok, output = run_gate_checks(gate_scripts)
+    gate_checks = FINISH_GATE_CHECKS.get(stage)
+    if gate_checks:
+        ok, output = run_gate_checks(gate_checks, args.applied_to)
         for line in output:
             print(line)
         if not ok:
-            print()
-            print(f"ERROR: finish refused for job {args.id!r}: gate checks failed (see output above).")
-            print("Fix the reported issues, then re-run the same finish command.")
-            return 1
+            mode = os.environ.get("STAGE_C_HARD_CHECKS", "enforce").strip().lower()
+            if stage == "write_chapter" and mode == "warn":
+                print()
+                print(
+                    "WARNING: finish gate checks failed, but STAGE_C_HARD_CHECKS=warn; "
+                    "continuing without blocking."
+                )
+            else:
+                print()
+                print(f"ERROR: finish refused for job {args.id!r}: gate checks failed (see output above).")
+                print("Fix the reported issues, then re-run the same finish command.")
+                return 1
 
     for kp_id in job.get("kp_ids", []):
         kp = find_kp(kp_data["knowledge_points"], kp_id)
@@ -198,6 +248,22 @@ def cmd_abort(args: argparse.Namespace) -> int:
     write_yaml("spec/workflow-state.yaml", state)
     write_yaml("spec/knowledge-points.yaml", kp_data)
     print(f"OK: aborted job {args.id}; KP status -> {args.to_status}")
+    if job.get("stage") == "write_chapter" and job.get("target"):
+        print(f"Visual plan, if present, was kept as draft: {visual_plan_path_for_target(str(job['target']))}")
+    return 0
+
+
+def cmd_validate(args: argparse.Namespace) -> int:
+    checks = WRITE_CHAPTER_CHECKS
+    ok, output = run_gate_checks(checks, args.target)
+    for line in output:
+        print(line)
+    if not ok:
+        print()
+        print(f"ERROR: validate failed for {args.target!r}")
+        return 1
+    print()
+    print(f"OK: validate passed for {args.target}")
     return 0
 
 
@@ -229,6 +295,10 @@ def main() -> int:
     abort.add_argument("--id", required=True)
     abort.add_argument("--to-status", choices=["pool", "queued"], default="queued")
     abort.set_defaults(func=cmd_abort)
+
+    validate = sub.add_parser("validate")
+    validate.add_argument("target")
+    validate.set_defaults(func=cmd_validate)
 
     args = parser.parse_args()
     return args.func(args)
