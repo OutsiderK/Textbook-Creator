@@ -209,7 +209,13 @@ with SVG labels containing `BIOS / bootblocks`, `Master Boot Record`, `LILO / GR
 
 ## Emphasis and Exam Tips
 
-Emphasis is an attention budget. Before adding any marker, decide:
+Emphasis is an attention budget. Use a hierarchy, not decoration:
+
+1. `==...==` — **judgment memory**. Use for exam tips, decisive distinctions, easy-confusion assertions, and core conclusions readers must retain.
+2. `<u>...</u>` — **local focus**. Use for short in-sentence conditions, limits, scope markers, contrast pivots, and algorithm-sensitive local choices.
+3. `**...**` — **term anchor**. Use for first introduction of concepts, named mechanisms, table anchors, and callout labels.
+
+Before adding any marker, decide:
 
 1. **Is this a structural relation?** (flow, comparison, state, classification, layered architecture, variable relations)
    → Use figure, table, formula, or ordered steps — not emphasis.
@@ -220,17 +226,33 @@ Emphasis is an attention budget. Before adding any marker, decide:
 3. **Is this a local keyword, condition, limit, or counterpoint the reader should briefly notice?**
    → Use `<u>下划线</u>`, or just plain prose.
 
+Trigger guide:
+
+| Situation | Prefer |
+|---|---|
+| `A 不是 B，而是 C` where B/C are the contrast focus | `<u>` |
+| `当 value < 0 时...` condition or limit | `<u>` |
+| `只在多 CPU / 多生产者场景下...` scope marker | `<u>` |
+| `互斥是同步的特殊情形` judgment | `==` or callout |
+| `value 为负表示等待队列长度` exam-relevant assertion | `==` or callout |
+| First definition of `记录型信号量` | `**` |
+| 3+ step process, comparison, state relation | table, steps, formula, or SVG |
+
 Hard constraints:
 
 - `<u>...</u>` **cannot** substitute for `exam_tip` consumption. Highlight, callout, or exercise remains the only valid consumption.
 - `==...==` wraps the judgment core only, not the long definition around it. Compress the sentence first, then mark.
 - Do not stack multiple markers in one clause. If a clause needs both `**term**` and `==judgment==`, split the clause.
 - `**term**` vs `<u>keyword</u>`: `**` introduces or anchors a term being defined; `<u>` flags a known term's role in the current sentence (condition, limit, contrast). When in doubt, no marker.
+- Do not track `<u>` in visual plans. Underline is handled by the emphasis pass and presentation checker warnings, not by `spec/visual-plans/*.yaml`.
 
 Bad:
 
 ```markdown
 ==复用是操作系统的基本特征==。
+==当 value < 0 时==，进程进入等待队列。
+==多生产者多消费者==还要保护 in/out 指针。
+临界区是==访问临界资源的代码段==。
 ```
 
 Good:
@@ -238,6 +260,9 @@ Good:
 ```markdown
 复用包括 ==时分复用和空分复用==。
 分时系统关心的是 <u>交互响应时间</u>，而不是单纯提高吞吐量。
+当 <u>value < 0</u> 时，进程进入等待队列。
+在 <u>多生产者多消费者</u> 场景下，还要保护 `in/out` 指针。
+临界区是<u>访问临界资源</u>的代码段。
 ```
 
 An `exam_tip` is consumed only if at least one is true:
@@ -247,6 +272,16 @@ An `exam_tip` is consumed only if at least one is true:
 - The assertion appears in an exercise or answer.
 
 See `spec/style-guide.md` for the full visual emphasis tier table.
+
+### Emphasis Pass
+
+After prose and structured components are drafted:
+
+1. Scan every `==...==`.
+2. If it marks a local condition, scope, contrast, or short phrase rather than a judgment, convert it to `<u>...</u>`.
+3. Scan dense explanatory paragraphs for unmarked local focus.
+4. Add `<u>` only when it helps the reader parse a sentence.
+5. Do not add underline merely to satisfy a count.
 
 ## Narrative Order
 

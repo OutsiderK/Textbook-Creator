@@ -46,6 +46,7 @@ Presentation:
 - Do not highlight ordinary definitions
 - Use **...** for first concepts, key terms, and callout titles
 - Use <u>...</u> for short conditions, limits, and in-sentence keyword roles (does not consume exam_tip)
+- Do not track <u>...</u> in visual plans; it is a sentence-level emphasis pass concern
 - Use tables for comparison, classification, and variable explanations
 - Use SVG for structure, process, state, architecture, and complex relations
 - Put figures/tables/callouts where the reader first needs them
@@ -55,6 +56,7 @@ Presentation:
 Emphasis self-check (before and after writing):
 - Does each ==...== wrap only the judgment core, not the surrounding definition?
 - Does each <u>...</u> wrap only a short condition, limit, or in-sentence keyword?
+- If there are many ==...== spans and no <u>...</u>, are local conditions/scopes being over-highlighted?
 - Are flow/comparison/state/classification carried by figure/table/steps, not by emphasis markup?
 - Are any ordinary definitions accidentally promoted to ==highlight==?
 

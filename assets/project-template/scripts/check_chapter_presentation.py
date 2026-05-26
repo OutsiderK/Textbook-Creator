@@ -17,6 +17,7 @@ from common import ROOT, knowledge_points, load_yaml, rel
 CALLOUT_LABELS = {"核心判断", "易错点", "常见误区", "思维停顿"}
 MAX_HIGHLIGHT_CHARS = 35
 MAX_UNDERLINE_CHARS = 30
+MANY_HIGHLIGHTS_WITHOUT_UNDERLINE = 6
 
 
 def split_frontmatter(text: str) -> tuple[dict[str, Any], str] | None:
@@ -258,22 +259,45 @@ def _nonspace_length(text: str) -> int:
     return len(re.sub(r"\s+", "", text))
 
 
-def emphasis_length_warnings(label: str, body: str) -> list[str]:
+def emphasis_warnings(label: str, body: str) -> list[str]:
     warnings: list[str] = []
-    for match in re.finditer(r"==(.+?)==", body, flags=re.S):
-        n = _nonspace_length(match.group(1))
+    highlights = list(re.finditer(r"==(.+?)==", body, flags=re.S))
+    underlines = list(re.finditer(r"<u\b[^>]*>(.+?)</u>", body, flags=re.S | re.IGNORECASE))
+
+    if len(highlights) >= MANY_HIGHLIGHTS_WITHOUT_UNDERLINE and not underlines:
+        warnings.append(
+            f"{label}: {len(highlights)} ==...== highlight(s) but no <u>...</u>; "
+            "check whether local conditions, scopes, or contrast pivots are over-highlighted"
+        )
+
+    for match in highlights:
+        content = match.group(1)
+        n = _nonspace_length(content)
         if n > MAX_HIGHLIGHT_CHARS:
             warnings.append(
                 f"{label}: ==...== span has {n} non-space chars "
                 f"(limit {MAX_HIGHLIGHT_CHARS}); compress to the judgment core"
             )
-    for match in re.finditer(r"<u\b[^>]*>(.+?)</u>", body, flags=re.S | re.IGNORECASE):
-        n = _nonspace_length(match.group(1))
+        if "<u" in content.casefold() or "**" in content:
+            warnings.append(f"{label}: nested emphasis inside ==...==; split the sentence or choose one marker")
+
+    for match in underlines:
+        content = match.group(1)
+        n = _nonspace_length(content)
         if n > MAX_UNDERLINE_CHARS:
             warnings.append(
                 f"{label}: <u>...</u> span has {n} non-space chars "
                 f"(limit {MAX_UNDERLINE_CHARS}); use prose or split the sentence"
             )
+        if re.search(r"[。！？!?；;]", content):
+            warnings.append(f"{label}: <u>...</u> contains sentence punctuation; reserve underline for short local focus")
+        if "==" in content or "**" in content:
+            warnings.append(f"{label}: nested emphasis inside <u>...</u>; split the sentence or choose one marker")
+
+    for line_no, line in enumerate(body.splitlines(), start=1):
+        if line.lstrip().startswith("#") and re.search(r"<u\b[^>]*>", line, flags=re.IGNORECASE):
+            warnings.append(f"{label}: underline in heading at line {line_no}; reserve underline for sentence-level focus")
+
     return warnings
 
 
@@ -318,7 +342,7 @@ def check_chapter(path: Path, kp_by_id: dict[str, dict[str, Any]]) -> tuple[list
     if len(parsed["callouts"]) > 8:
         warnings.append(f"{label}: many callouts ({len(parsed['callouts'])}); check reading rhythm")
     warnings.extend(long_plain_paragraph_warnings(label, body))
-    warnings.extend(emphasis_length_warnings(label, body))
+    warnings.extend(emphasis_warnings(label, body))
 
     return errors, warnings
 
