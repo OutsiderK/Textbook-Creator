@@ -205,7 +205,9 @@ During ingest, classify pages with cross-discipline signals:
 - **Lexical signals**: Chinese or English headings suggesting structure, process, formula, proof, comparison, classification, case/example, experiment, architecture, state transition, table, or diagram.
 - **Extraction anomaly signals**: garbled formulas, missing labels, empty pages with visible content, text order that likely lost rows/columns/arrows.
 - **Context signals**: neighboring pages indicate a process/structure/algorithm/formula/example section even if the current page has no reliable title.
-- **Environment adaptation**: do not assume Poppler commands or a PDF-native visual `Read(...)` tool are available. If direct PDF visual reading is unavailable, render high-risk pages or contact sheets with an available renderer such as PyMuPDF/fitz, then visually inspect the rendered PNGs.
+- **Thumbnail classification**: render thumbnail contact sheets covering **all pages** before final risk assignment. Each contact sheet must contain at most 20 pages. Use thumbnails to identify whether each page has non-template visual content, especially large embedded image blocks, flow boxes, arrows, tables, formulas, code/screenshot blocks, charts, or diagrams.
+- **Classification review gate**: if a page has little extracted text but thumbnails show a non-template large visual block, flow boxes, arrows, table, formula, screenshot, or diagram, do not directly mark it `section_divider`, `low`, or otherwise visually safe. First render that page alone and perform a classification review: decide whether the visual carries knowledge structure. If yes, mark `high`; if no, record the demotion evidence.
+- **Environment adaptation**: do not assume Poppler commands or a PDF-native visual `Read(...)` tool are available. If direct PDF visual reading is unavailable, render high-risk pages, classification-review pages, or contact sheets with an available renderer such as PyMuPDF/fitz, then visually inspect the rendered PNGs.
 - **False-positive control**: PPT master backgrounds, decorative images, and repeated template elements can make `page.images` look risky. Treat image count/area as candidate evidence, then confirm final risk with text density, vector/layout signals, page title, neighboring context, and low-resolution page thumbnails when available.
 
 Assign each page a `risk_level` and `page_class`:
@@ -213,7 +215,7 @@ Assign each page a `risk_level` and `page_class`:
 - `risk_level: high` — visual review is required before Stage A can claim the page's important details were captured.
 - `risk_level: medium` — do not review by default. Review only if the user requests it, high-page review reveals nearby omissions, or a small medium-page sample shows the extraction is unreliable.
 - `risk_level: low` — no visual review by default.
-- `risk_level: section_divider` — use as context for adjacent pages; do not review alone unless it contains substantive visual content.
+- `risk_level: section_divider` — use as context for adjacent pages; do not review alone only after confirming it has no substantive non-template visual content. A title page with an embedded diagram/table/formula/screenshot is not a section divider.
 
 Suggested `page_class` values: `process_diagram`, `architecture_diagram`, `state_machine`, `comparison_table`, `formula_derivation`, `chart_or_plot`, `code_or_command`, `case_steps`, `taxonomy`, `table`, `screenshot_or_scanned`, `section_divider`, `text_dense`, `normal_text`.
 

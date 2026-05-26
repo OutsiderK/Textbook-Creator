@@ -71,14 +71,16 @@ with pdfplumber.open("sources/ppts/<file>.pdf") as pdf:
 
 对每页做跨学科风险判断。不要只依赖中文关键词；结合结构信号、英文标题、抽取异常和相邻页上下文。
 
-注意 PPT 母版背景、装饰图、页脚 logo 和重复模板元素会污染 `page.images` 信号：图片数量或面积只能作为候选证据，不能单独决定 high。若发现几乎所有页都有图片对象，应抽样渲染低分辨率缩略图/contact sheet，区分真正承载知识的流程图、表格、公式、截图与纯装饰背景。
+先渲染覆盖**所有页面**的低分辨率缩略图/contact sheet，并逐页判断是否存在非模板视觉内容。每张 contact sheet 最多包含 20 页。缩略图用于分类，不用于抽取图中文字细节；它必须帮助识别大块嵌入图片、流程框、箭头、表格、公式、代码/截图块、图表或结构图。
+
+注意 PPT 母版背景、装饰图、页脚 logo 和重复模板元素会污染 `page.images` 信号：图片数量或面积只能作为候选证据，不能单独决定 high。用 contact sheet 区分真正承载知识的流程图、表格、公式、截图与纯装饰背景。
 
 结构信号：
 
 - 低文本或空文本，但页面有可见内容。
 - 大图、多图、截图、扫描页、矢量框图、箭头、图表、曲线、表格、代码/命令块。
 - 公式/推导文本疑似乱序，或表格行列关系可能丢失。
-- 标题页/过渡页字体很大但内容很少；这类通常是 `section_divider`，只给相邻页提供上下文。
+- 标题页/过渡页字体很大但内容很少；只有确认页面没有实质性的非模板图块、流程框、箭头、表格、公式、代码/截图或结构图时，才可标为 `section_divider`。
 
 中英文词汇信号：
 
@@ -94,7 +96,8 @@ with pdfplumber.open("sources/ppts/<file>.pdf") as pdf:
 
 - `high` 页必须视觉复核。
 - `medium` 页默认不视觉复核；只有用户要求、抽查 medium 后发现漏点、或 high 页复核显示相邻 medium 页明显相关时，才升级复核。
-- `section_divider` 页只作为上下文，不单独视觉复核，除非它本身包含实质图表/流程/公式/表格。
+- 若页面抽取文本很少，但缩略图显示非模板大图块、流程框、箭头、表格、公式、代码/截图、图表或结构图，不能直接降级为 `section_divider` 或 `low`。必须先单页渲染做分类复核：只判断该视觉是否承载知识结构。确认承载知识结构则标为 `high`；确认只是装饰或无教学信息，才可降级，并在审计中记录反证。
+- `section_divider` 页只作为上下文，不单独视觉复核；但它必须已经通过缩略图和必要的单页分类复核确认没有实质图表/流程/公式/表格/截图。
 
 如果项目已有合适脚本，可写 `docs/page-risk-<batch>.yaml`。没有脚本时，也要在 `docs/ingest-<batch>.md` 写出同等信息：
 
@@ -119,6 +122,10 @@ false_positive_control:
   section_dividers:
     - page: 17
       reason: 章节/小节过渡页，只为后续页提供上下文。
+      demotion_evidence:
+        text_only_title: true
+        non_template_visual: false
+        structural_marks: []
   uncertain_sample:
     - page: 42
       reason: medium 风险表格页，若 high 页发现表格抽取丢行列关系再复核。
@@ -153,7 +160,7 @@ for page_no in [12, 14, 18]:
     pix.save(out_dir / f"{pdf_path.stem}-p{page_no:03d}.png")
 ```
 
-每次视觉读取约 10K–30K token，**默认只读 high 页**。如果需要校正风险分级，可先渲染低分辨率 contact sheet，只判断版面和图表存在性，不提取图中文字细节。
+每次视觉读取约 10K–30K token，**默认只读 high 页**。分类复核页不等同于完整视觉读取：可先单页中低分辨率渲染，只判断版面和图表存在性，不提取图中文字细节；确认需要抽取结构后再按 high 页视觉补全。
 
 `medium` 页的升级规则：
 
