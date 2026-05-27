@@ -33,6 +33,7 @@ The trailing `/.` copies template contents (not the directory itself) into `<pro
     inspect_state.py
     workflow_job.py
     check_kp_schema.py
+    check_page_risk.py
     check_chapter_frontmatter.py
     check_detail_coverage.py
     check_visual_assets.py

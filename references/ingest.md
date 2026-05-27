@@ -73,10 +73,19 @@ with pdfplumber.open("sources/ppts/<file>.pdf") as pdf:
 
 先渲染覆盖**所有页面**的低分辨率缩略图/contact sheet，并逐页判断是否存在非模板视觉内容。每张 contact sheet 最多包含 20 页。缩略图用于分类，不用于抽取图中文字细节；它必须帮助识别大块嵌入图片、流程框、箭头、表格、公式、代码/截图块、图表或结构图。
 
+**Contact sheet 初筛是绑定门禁。** 对每一页都记录：
+
+- `thumbnail_observation`：从 contact sheet 看到的版面证据，一句话即可。不能只写"安全"或"无图"。
+- `visual_candidate: true|false`：只要 contact sheet 上疑似出现非模板大图、流程框、箭头、表格、公式、代码/截图、图表、结构图或扫描块，就标 `true`。这个判断与文本抽取多少无关。
+- `candidate_reason`：如 `large_non_template_visual`、`boxes_or_flow`、`arrows`、`table_like`、`formula_like`、`screenshot_or_scan`、`chart_like`、`code_block`。
+
+凡 `visual_candidate: true` 的页，必须进入单页分类复核；不能直接分配最终 `risk_level`，也不能直接降为 `section_divider`。
+
 注意 PPT 母版背景、装饰图、页脚 logo 和重复模板元素会污染 `page.images` 信号：图片数量或面积只能作为候选证据，不能单独决定 high。用 contact sheet 区分真正承载知识的流程图、表格、公式、截图与纯装饰背景。
 
 结构信号：
 
+- Contact sheet 中疑似有大图、流程框、箭头、表格、公式、代码/截图、图表或结构图。
 - 低文本或空文本，但页面有可见内容。
 - 大图、多图、截图、扫描页、矢量框图、箭头、图表、曲线、表格、代码/命令块。
 - 公式/推导文本疑似乱序，或表格行列关系可能丢失。
@@ -96,8 +105,9 @@ with pdfplumber.open("sources/ppts/<file>.pdf") as pdf:
 
 - `high` 页必须视觉复核。
 - `medium` 页默认不视觉复核；只有用户要求、抽查 medium 后发现漏点、或 high 页复核显示相邻 medium 页明显相关时，才升级复核。
-- 若页面抽取文本很少，但缩略图显示非模板大图块、流程框、箭头、表格、公式、代码/截图、图表或结构图，不能直接降级为 `section_divider` 或 `low`。必须先单页渲染做分类复核：只判断该视觉是否承载知识结构。确认承载知识结构则标为 `high`；确认只是装饰或无教学信息，才可降级，并在审计中记录反证。
-- `section_divider` 页只作为上下文，不单独视觉复核；但它必须已经通过缩略图和必要的单页分类复核确认没有实质图表/流程/公式/表格/截图。
+- 若 contact sheet 初筛标出 `visual_candidate: true`，必须先单页渲染并打开复核：只判断该视觉是否承载知识结构。确认承载知识结构则标为 `high`；确认只是装饰、模板或无教学信息，才可降级，并在审计中记录反证。
+- 渲染出 PNG 不等于已经复核。审计里必须有 `opened_rendered_page: true` 和具体的 `visual_observation`，说明实际看到了什么。
+- `section_divider` 页只作为上下文，不单独视觉复核；但它必须已经通过 contact sheet 观察确认无疑似结构图。若曾被标为 `visual_candidate: true`，还必须通过单页分类复核并留下 demotion evidence。
 
 如果项目已有合适脚本，可写 `docs/page-risk-<batch>.yaml`。没有脚本时，也要在 `docs/ingest-<batch>.md` 写出同等信息：
 
@@ -108,6 +118,33 @@ summary:
   high_count: 5
   medium_count: 9
   section_divider_count: 4
+thumbnail_scan:
+  - page: 18
+    contact_sheet: tmp/page-review/ch08/contact-1.png
+    thumbnail_observation: 页面主体有大块流程/层级图，疑似包含英文节点和箭头。
+    visual_candidate: true
+    candidate_reason: [large_non_template_visual, boxes_or_flow, possible_labels]
+  - page: 17
+    contact_sheet: tmp/page-review/ch08/contact-1.png
+    thumbnail_observation: 仅有小节标题和模板背景，未见流程框、表格、公式、截图或结构图。
+    visual_candidate: false
+    candidate_reason: []
+classification_review:
+  - page: 18
+    rendered_page: tmp/page-review/ch08/p018.png
+    opened_rendered_page: true
+    visual_observation: 页面中央是启动流程图，从 Power-up/Reset 到 System startup、Stage 1 bootloader、Stage 2 bootloader、Kernel、Init、Operation；右侧对应 BIOS/BootMonitor、MBR、LILO/GRUB、Linux、User-space。
+    decision: high
+    page_class: process_diagram
+  - page: 6
+    rendered_page: tmp/page-review/ch08/p006.png
+    opened_rendered_page: true
+    visual_observation: 仅有标题和模板背景，没有流程框、箭头、表格、公式、代码截图或结构化标签。
+    decision: section_divider
+    page_class: section_divider
+    demotion_evidence:
+      substantive_visual: false
+      template_or_decorative_only: true
 review_queue:
   - page: 18
     priority: 1
@@ -123,12 +160,22 @@ false_positive_control:
     - page: 17
       reason: 章节/小节过渡页，只为后续页提供上下文。
       demotion_evidence:
-        text_only_title: true
-        non_template_visual: false
-        structural_marks: []
+        contact_sheet_observation: 仅有小节标题和模板背景，未见疑似结构视觉块。
+        visual_candidate: false
   uncertain_sample:
     - page: 42
       reason: medium 风险表格页，若 high 页发现表格抽取丢行列关系再复核。
+page_risks:
+  - page: 18
+    risk_level: high
+    page_class: process_diagram
+    thumbnail:
+      visual_candidate: true
+      observation: 页面主体有大块流程/层级图，疑似包含英文节点和箭头。
+    classification_review:
+      required: true
+      completed: true
+      decision: high
 ```
 
 **1.3 — 只对 high 页做视觉补全**
@@ -361,7 +408,12 @@ The `path` field (project-relative) is required so `inspect_state.py` can recogn
 
 ### 9. Cleanup
 
-Run `python3 scripts/check_kp_schema.py` — must pass.
+Run these checks — both must pass:
+
+```bash
+python3 scripts/check_kp_schema.py
+python3 scripts/check_page_risk.py docs/page-risk-<batch>.yaml
+```
 
 ## Report to User
 

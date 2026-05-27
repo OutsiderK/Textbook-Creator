@@ -15,6 +15,7 @@ Map of scripts to severity and when to run them. All scripts assume the current 
 |---|---|---|---|
 | `inspect_state.py` | Every invocation and after every stage | state report | Project state and next actions |
 | `check_kp_schema.py` | After A/B/C/D | hard | KP schema, status/queue rules, card fields |
+| `check_page_risk.py docs/page-risk-<batch>.yaml` | After A | hard | Contact-sheet visual candidates have single-page classification review evidence before final risk assignment |
 | `check_chapter_frontmatter.py` | After C/D | hard | Chapter front matter and forbidden workflow terms |
 | `check_detail_coverage.py` | After C/D | hard | `must_cover` appears in chapter/support text unless deferred |
 | `check_visual_assets.py` | After C | hard | Visual plan exists; declared outputs match chapter/assets; structural carriers cover `must_cover` |
@@ -43,9 +44,11 @@ python3 scripts/inspect_state.py --json
 
 ```bash
 python3 scripts/check_kp_schema.py
+python3 scripts/check_page_risk.py docs/page-risk-<batch>.yaml
 ```
 
 Visual audit fields on `detail_cards` are expected: `visual_reviewed`, `review_risk_level`, `page_class`, `structure_kind`, `verified_items`, and `must_cover[].item/aliases/role/deferred/defer_reason`.
+Page-risk audits must include `thumbnail_scan` for every page. Any `visual_candidate: true` page must include `classification_review` with `opened_rendered_page: true`, a non-empty `visual_observation`, and a final decision matching `page_risks[].risk_level`.
 
 ## After Stage B (Rebalance)
 
