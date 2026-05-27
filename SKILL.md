@@ -199,27 +199,31 @@ Main chapters must read like a polished textbook. Do not expose workflow vocabul
 
 Stage A must treat source PDFs/PPTs as mixed text-and-visual artifacts. Text extraction is a skeleton, not proof of coverage.
 
-During ingest, classify pages with cross-discipline signals:
+During ingest, build a page-level text skeleton first, then create visual input only for pages that need it. Do not require full-page contact sheets, per-page thumbnail observations, or binding `visual_candidate` gates for every page.
 
-- **Structural signals**: low extracted text, large or many images, image-only/scanned pages, likely vector diagrams, table-like layouts, formula-like text, code/command blocks, high font-size variance, or title-only section dividers.
-- **Lexical signals**: Chinese or English headings suggesting structure, process, formula, proof, comparison, classification, case/example, experiment, architecture, state transition, table, or diagram.
-- **Extraction anomaly signals**: garbled formulas, missing labels, empty pages with visible content, text order that likely lost rows/columns/arrows.
-- **Context signals**: neighboring pages indicate a process/structure/algorithm/formula/example section even if the current page has no reliable title.
-- **Thumbnail classification**: render thumbnail contact sheets covering **all pages** before final risk assignment. Each contact sheet must contain at most 20 pages. Use thumbnails to identify whether each page has non-template visual content, especially large embedded image blocks, flow boxes, arrows, tables, formulas, code/screenshot blocks, charts, or diagrams. For every page, record a short `thumbnail_observation` and a boolean `visual_candidate`.
-- **Classification review gate**: contact-sheet classification is binding. If a page is marked or visibly suspected as `visual_candidate: true` from the contact sheet, it must enter single-page classification review before final `risk_level` assignment, regardless of extracted text length. Rendering a page is not review evidence by itself: the audit must record what was visually observed from the rendered page. If the visual carries knowledge structure, mark `high`; if it is decorative/template-only, record explicit demotion evidence before marking `section_divider`, `low`, or otherwise visually safe.
-- **Environment adaptation**: do not assume Poppler commands or a PDF-native visual `Read(...)` tool are available. If direct PDF visual reading is unavailable, render high-risk pages, classification-review pages, or contact sheets with an available renderer such as PyMuPDF/fitz, then visually inspect the rendered PNGs.
-- **False-positive control**: PPT master backgrounds, decorative images, and repeated template elements can make `page.images` look risky. Treat image count/area as candidate evidence, then confirm final risk with text density, vector/layout signals, page title, neighboring context, and low-resolution page thumbnails when available.
+The visual review set is the union of:
 
-Assign each page a `risk_level` and `page_class`:
+- **Teaching-image pages**: pages confirmed or kept uncertain by `$find-teaching-image-slides`. These pages must receive `visual_page_notes` before formal KP extraction.
+- **Comprehension blockers**: pages discovered during KP extraction where extracted text plus existing notes cannot reliably recover the teaching structure. Render the page immediately, create `visual_page_notes`, inject the note into that page's input, and then continue extraction.
 
-- `risk_level: high` — visual review is required before Stage A can claim the page's important details were captured.
-- `risk_level: medium` — do not review by default. Review only if the user requests it, high-page review reveals nearby omissions, or a small medium-page sample shows the extraction is unreliable.
-- `risk_level: low` — no visual review by default.
-- `risk_level: section_divider` — use as context for adjacent pages; assign only after contact-sheet observation and, for any `visual_candidate: true` page, single-page classification review confirms it has no substantive non-template visual content. A title page with an embedded diagram/table/formula/screenshot is not a section divider.
+Use these signals to decide when a page is a comprehension blocker:
+
+- **Structural signals**: code/command blocks, table-like layouts, formula derivations, process diagrams, state transitions, comparison matrices, vector diagrams, image-only/scanned pages, or unusually low extracted text with visible content.
+- **Extraction anomaly signals**: garbled formulas, missing labels, duplicated fragments, cross-column mixing, broken table row/column order, or text order that likely lost arrows, branches, indentation, or call ranges.
+- **Context signals**: neighboring pages indicate a process, algorithm, formula, example, table, or diagram section even if the current page title is sparse.
+
+`visual_page_notes` are KP extraction input, not an after-the-fact audit patch. Each note should capture only teaching-relevant structure: nodes, steps, variables, conditions, rows/columns, arrows, branch order, code indentation, figure relationships, and exam-relevant labels. Avoid describing decoration unless it carries teaching meaning.
+
+Assign each page a `risk_level` and `page_class` in `page_risks`, but only pages in `final_visual_review_pages` require `visual_page_notes`:
+
+- `risk_level: high` — visual notes are required before Stage A can claim the page's important details were captured, unless `high_without_visual_review_reason` explicitly explains an exceptional safe case.
+- `risk_level: medium` — no visual note by default; upgrade only if extraction becomes unreliable, a neighboring high page depends on it, or spot-checks show omissions.
+- `risk_level: low` — no visual note by default.
+- `risk_level: section_divider` — use as context for adjacent pages; do not create notes unless it contains substantive teaching structure.
 
 Suggested `page_class` values: `process_diagram`, `architecture_diagram`, `state_machine`, `comparison_table`, `formula_derivation`, `chart_or_plot`, `code_or_command`, `case_steps`, `taxonomy`, `table`, `screenshot_or_scanned`, `section_divider`, `text_dense`, `normal_text`.
 
-For visually reviewed high-risk pages, convert visible exam-relevant details into `detail_cards`, using `structure_kind`, `verified_items`, and `must_cover` when the card contains nodes, steps, variables, conditions, rows/columns, comparisons, formulas, code commands, or other details that must survive into the textbook. Use `item` rather than `term` because cross-discipline details may be formulas, steps, conditions, categories, variables, or case facts.
+For visually reviewed pages, convert exam-relevant visible details into `detail_cards`, using `visual_reviewed`, `review_risk_level`, `structure_kind`, and `must_cover` when the card contains nodes, steps, variables, conditions, rows/columns, comparisons, formulas, code commands, or other details that must survive into the textbook. Use `item` rather than `term` because cross-discipline details may be formulas, steps, conditions, categories, variables, or case facts.
 
 ## Write Boundaries (per stage)
 

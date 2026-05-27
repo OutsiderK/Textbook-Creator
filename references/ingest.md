@@ -39,191 +39,223 @@ If interrupted mid-stage:
 
 ## Process
 
-### 1. Read the PPT (hybrid: text-first, risk-ranked visual)
+### 1. Read the PPT (text skeleton + targeted visual notes)
 
-一份 PPT 通常 30–80 张幻灯片；整本视觉读会烧 50K–100K token。正确做法是**先用 pdfplumber 抓文本，再对图表页做风险排序后的视觉补全**。视觉补全使用当前环境可用的路径：能直接读取 PDF 页面就直接读；不能直接读时，先把目标页渲染成 PNG 再视觉复核。
+一份 PPT 通常 30–80 张幻灯片；整本视觉读会烧 50K–100K token。Stage A v2 的正确做法是**先建立逐页文本骨架，再把必要视觉信息转成 `visual_page_notes`，最后用 text + notes 一起提取 KP**。视觉信息不是 KP 提取后的补丁。
 
-**1.1 — pdfplumber 骨架扫描（一次拿全文本 + 准确页号）**
+**1.1 — pdfplumber text skeleton scan**
 
-通过 Bash 工具运行：
-
-```python
-import pdfplumber
-with pdfplumber.open("sources/ppts/<file>.pdf") as pdf:
-    for i, page in enumerate(pdf.pages, start=1):
-        text = page.extract_text() or ""
-        has_images = bool(page.images)
-        marker = "  [has images]" if has_images else ""
-        print(f"=== Slide {i}{marker} ===")
-        print(text)
-```
-
-这一步搞定 **~80% 的 KP 提取**，并为视觉复核做页面审计：
-
-- 每个 KP 的 `concept`、`role` 判定
-- `detail_cards.type` ∈ {method, operation, exam_tip} 的 summary
-- `source.slides` 字段的精确填写
-- 标记好每页的文本长度、图片/表格/公式/代码/图示迹象，供 1.2 风险分级用
-
-如果环境没 pdfplumber：`pip install pdfplumber`（也是 `/pdf` skill 推荐的栈）。退化方案用 `pypdf` 也行，但 pdfplumber 的 page.images 检测更准。若没有 Poppler 命令（如 `pdftoppm`、`pdfinfo`、`pdfimages`），但有 PyMuPDF/fitz 和 Pillow，可用 PyMuPDF 渲染单页或 contact sheet 作为视觉复核输入。
-
-**1.2 — 页面风险分级：输出视觉复核队列**
-
-对每页做跨学科风险判断。不要只依赖中文关键词；结合结构信号、英文标题、抽取异常和相邻页上下文。
-
-先渲染覆盖**所有页面**的低分辨率缩略图/contact sheet，并逐页判断是否存在非模板视觉内容。每张 contact sheet 最多包含 20 页。缩略图用于分类，不用于抽取图中文字细节；它必须帮助识别大块嵌入图片、流程框、箭头、表格、公式、代码/截图块、图表或结构图。
-
-**Contact sheet 初筛是绑定门禁。** 对每一页都记录：
-
-- `thumbnail_observation`：从 contact sheet 看到的版面证据，一句话即可。不能只写"安全"或"无图"。
-- `visual_candidate: true|false`：只要 contact sheet 上疑似出现非模板大图、流程框、箭头、表格、公式、代码/截图、图表、结构图或扫描块，就标 `true`。这个判断与文本抽取多少无关。
-- `candidate_reason`：如 `large_non_template_visual`、`boxes_or_flow`、`arrows`、`table_like`、`formula_like`、`screenshot_or_scan`、`chart_like`、`code_block`。
-
-凡 `visual_candidate: true` 的页，必须进入单页分类复核；不能直接分配最终 `risk_level`，也不能直接降为 `section_divider`。
-
-注意 PPT 母版背景、装饰图、页脚 logo 和重复模板元素会污染 `page.images` 信号：图片数量或面积只能作为候选证据，不能单独决定 high。用 contact sheet 区分真正承载知识的流程图、表格、公式、截图与纯装饰背景。
-
-结构信号：
-
-- Contact sheet 中疑似有大图、流程框、箭头、表格、公式、代码/截图、图表或结构图。
-- 低文本或空文本，但页面有可见内容。
-- 大图、多图、截图、扫描页、矢量框图、箭头、图表、曲线、表格、代码/命令块。
-- 公式/推导文本疑似乱序，或表格行列关系可能丢失。
-- 标题页/过渡页字体很大但内容很少；只有确认页面没有实质性的非模板图块、流程框、箭头、表格、公式、代码/截图或结构图时，才可标为 `section_divider`。
-
-中英文词汇信号：
-
-- 中文：过程、流程、步骤、阶段、链路、机制、算法、模型、结构、架构、层次、组件、状态、转换、示意、对比、比较、分类、公式、推导、定理、证明、例题、案例、实验、装置、表。
-- English: process, procedure, workflow, pipeline, lifecycle, phase, stage, sequence, mechanism, algorithm, model, architecture, structure, hierarchy, framework, component, stack, layer, state, transition, diagram, comparison, compare, versus, vs, taxonomy, classification, formula, equation, derivation, theorem, proof, case, example, experiment, lab, table.
-
-给每页分配：
-
-- `risk_level`: `high | medium | low | section_divider`
-- `page_class`: `process_diagram | architecture_diagram | state_machine | comparison_table | formula_derivation | chart_or_plot | code_or_command | case_steps | taxonomy | table | screenshot_or_scanned | section_divider | text_dense | normal_text`
-
-默认策略：
-
-- `high` 页必须视觉复核。
-- `medium` 页默认不视觉复核；只有用户要求、抽查 medium 后发现漏点、或 high 页复核显示相邻 medium 页明显相关时，才升级复核。
-- 若 contact sheet 初筛标出 `visual_candidate: true`，必须先单页渲染并打开复核：只判断该视觉是否承载知识结构。确认承载知识结构则标为 `high`；确认只是装饰、模板或无教学信息，才可降级，并在审计中记录反证。
-- 渲染出 PNG 不等于已经复核。审计里必须有 `opened_rendered_page: true` 和具体的 `visual_observation`，说明实际看到了什么。
-- `section_divider` 页只作为上下文，不单独视觉复核；但它必须已经通过 contact sheet 观察确认无疑似结构图。若曾被标为 `visual_candidate: true`，还必须通过单页分类复核并留下 demotion evidence。
-
-如果项目已有合适脚本，可写 `docs/page-risk-<batch>.yaml`。没有脚本时，也要在 `docs/ingest-<batch>.md` 写出同等信息：
-
-```yaml
-summary:
-  pdf: sources/ppts/<file>.pdf
-  pages_total: 79
-  high_count: 5
-  medium_count: 9
-  section_divider_count: 4
-thumbnail_scan:
-  - page: 18
-    contact_sheet: tmp/page-review/ch08/contact-1.png
-    thumbnail_observation: 页面主体有大块流程/层级图，疑似包含英文节点和箭头。
-    visual_candidate: true
-    candidate_reason: [large_non_template_visual, boxes_or_flow, possible_labels]
-  - page: 17
-    contact_sheet: tmp/page-review/ch08/contact-1.png
-    thumbnail_observation: 仅有小节标题和模板背景，未见流程框、表格、公式、截图或结构图。
-    visual_candidate: false
-    candidate_reason: []
-classification_review:
-  - page: 18
-    rendered_page: tmp/page-review/ch08/p018.png
-    opened_rendered_page: true
-    visual_observation: 页面中央是启动流程图，从 Power-up/Reset 到 System startup、Stage 1 bootloader、Stage 2 bootloader、Kernel、Init、Operation；右侧对应 BIOS/BootMonitor、MBR、LILO/GRUB、Linux、User-space。
-    decision: high
-    page_class: process_diagram
-  - page: 6
-    rendered_page: tmp/page-review/ch08/p006.png
-    opened_rendered_page: true
-    visual_observation: 仅有标题和模板背景，没有流程框、箭头、表格、公式、代码截图或结构化标签。
-    decision: section_divider
-    page_class: section_divider
-    demotion_evidence:
-      substantive_visual: false
-      template_or_decorative_only: true
-review_queue:
-  - page: 18
-    priority: 1
-    risk_level: high
-    page_class: process_diagram
-    evidence: [low_text, large_image, keyword_process]
-    why_visual_needed: 纯文本只保留标题，流程节点和箭头方向在图中。
-    expected_extraction_focus:
-      - 节点、顺序、箭头方向、分支条件
-      - 图中具名实体和缩写
-false_positive_control:
-  section_dividers:
-    - page: 17
-      reason: 章节/小节过渡页，只为后续页提供上下文。
-      demotion_evidence:
-        contact_sheet_observation: 仅有小节标题和模板背景，未见疑似结构视觉块。
-        visual_candidate: false
-  uncertain_sample:
-    - page: 42
-      reason: medium 风险表格页，若 high 页发现表格抽取丢行列关系再复核。
-page_risks:
-  - page: 18
-    risk_level: high
-    page_class: process_diagram
-    thumbnail:
-      visual_candidate: true
-      observation: 页面主体有大块流程/层级图，疑似包含英文节点和箭头。
-    classification_review:
-      required: true
-      completed: true
-      decision: high
-```
-
-**1.3 — 只对 high 页做视觉补全**
-
-对 `review_queue` 中 `risk_level: high` 的页使用视觉读取，捕捉纯文本抓不到的：
-
-- 流程图：节点、顺序、箭头方向、分支条件。
-- 架构图：组件、层级、连接关系。
-- 状态图：状态、转换条件。
-- 表格/对照表：行列标题、比较维度、关键差异。
-- 公式推导：公式、变量、适用条件、推导结论。
-- 图表曲线：坐标轴、变量、趋势、拐点、结论。
-- 代码/命令：命令、参数、输出、执行顺序。
-- 案例/例题：步骤、已知条件、解题路径、结论。
-
-调用方式取决于当前工具环境。若有 PDF-native 视觉读取工具，精确读取 high 页范围；若没有，使用可用渲染器先把 high 页转成 PNG 再读取。可用的本地 fallback 是 PyMuPDF/fitz：
+通过 Bash 工具运行并保存输出到 `tmp/page-review/batch-<batch>/text.json` 和 `tmp/page-review/batch-<batch>/text.txt`：
 
 ```python
+import json
 from pathlib import Path
-import fitz
+import pdfplumber
 
 pdf_path = Path("sources/ppts/<file>.pdf")
-out_dir = Path("tmp/page-review")
+out_dir = Path("tmp/page-review/batch-<batch>")
 out_dir.mkdir(parents=True, exist_ok=True)
-doc = fitz.open(str(pdf_path))
-for page_no in [12, 14, 18]:
-    page = doc[page_no - 1]
-    pix = page.get_pixmap(matrix=fitz.Matrix(2, 2), alpha=False)
-    pix.save(out_dir / f"{pdf_path.stem}-p{page_no:03d}.png")
+
+records = []
+with pdfplumber.open(pdf_path) as pdf:
+    for i, page in enumerate(pdf.pages, start=1):
+        text = page.extract_text() or ""
+        records.append({
+            "page": i,
+            "text": text,
+            "chars": len(text),
+            "images_raw_count": len(page.images),
+            "tables_raw_count": len(page.find_tables()),
+        })
+
+(out_dir / "text.json").write_text(
+    json.dumps(records, ensure_ascii=False, indent=2),
+    encoding="utf-8",
+)
+(out_dir / "text.txt").write_text(
+    "\n\n".join(f"=== Slide {r['page']} ===\n{r['text']}" for r in records),
+    encoding="utf-8",
+)
 ```
 
-每次视觉读取约 10K–30K token，**默认只读 high 页**。分类复核页不等同于完整视觉读取：可先单页中低分辨率渲染，只判断版面和图表存在性，不提取图中文字细节；确认需要抽取结构后再按 high 页视觉补全。
+这一步只建立骨架，不做最终视觉风险判定，不要求全页 contact sheet，也不要求逐页 `thumbnail_observation`。
 
-`medium` 页的升级规则：
+如果环境没 pdfplumber：`pip install pdfplumber`（也是 `/pdf` skill 推荐的栈）。退化方案用 `pypdf` 也行，但 pdfplumber 的页级元信息更有用。若没有 Poppler 命令，但有 PyMuPDF/fitz 和 Pillow，可用 PyMuPDF 渲染目标页作为视觉复核输入。
 
-- 用户明确要求复核 medium 页。
-- high 页视觉复核显示该页与相邻 medium 页共同构成同一流程/公式/案例/表格。
-- 抽样 2–3 个 medium 页后发现文本抽取明显丢图中标签、公式结构、表格行列或箭头关系。
+**1.2 — Teaching image prepass**
 
-**1.4 — Sanity spot-check**
+对当前 PDF 运行 `$find-teaching-image-slides`，让它负责“严格教学图片页”的召回和去模板噪声：
 
-随机抽 2–3 张（标题页 + 1–2 张中段）用当前可用的视觉路径读一遍，校验你的 KP 提取是否反映幻灯实际内容。这一步抓三类问题：
+```bash
+python3 /home/coder/.codex/skills/find-teaching-image-slides/scripts/scan_teaching_image_pages.py \
+  sources/ppts/<file>.pdf \
+  --out tmp/page-review/batch-<batch>/teaching-image-scan
+```
+
+然后按该 skill 的流程查看 `teaching_image_pages.md`、`contact_*.jpg`，填写 `review_decisions_template.csv`，并运行：
+
+```bash
+python3 /home/coder/.codex/skills/find-teaching-image-slides/scripts/finalize_review_decisions.py \
+  tmp/page-review/batch-<batch>/teaching-image-scan/teaching_image_pages.json \
+  tmp/page-review/batch-<batch>/teaching-image-scan/review_decisions_template.csv
+```
+
+Stage A 必须把 `confirmed + uncertain` 加入最终视觉复核集合。不要把 `$find-teaching-image-slides` 当作全部判定器：它识别教学图片页，但不能覆盖“没有教学图片、却因文本抽取乱序而无法理解”的页。
+
+**1.3 — Build visual_page_notes before KP extraction**
+
+对 teaching-image `confirmed + uncertain` 的每页，先渲染单页 PNG，再生成 `visual_page_notes`。可以使用项目模板脚本：
+
+```bash
+python3 scripts/render_stage_a_pages.py \
+  sources/ppts/<file>.pdf \
+  --pages 37,48,50 \
+  --out tmp/page-review/batch-<batch>/pages
+```
+
+`visual_page_notes` 是正式 KP 提取的输入，必须把视觉知识转成结构化文本；不要只写“有图”或“已复核”。
+
+```yaml
+visual_page_notes:
+  - page: 37
+    source: teaching_image
+    rendered_page: tmp/page-review/batch-002/pages/p037.png
+    visual_observation: 页面中央是有界缓冲区示意图，包含生产者、消费者、缓冲区、输入/输出方向。
+    provisional_concepts:
+      - 有界缓冲区中的生产者-消费者关系
+    must_capture:
+      - 生产者向缓冲区放入产品。
+      - 消费者从缓冲区取出产品。
+      - 缓冲区容量有限，因此需要同步与互斥。
+    possible_detail_card_type: figure
+    confidence: high
+```
+
+字段要求：
+
+- `page`：1-indexed 页码。
+- `source`：`teaching_image` 或 `comprehension_blocker`。
+- `blocker`：仅 `source: comprehension_blocker` 时必填。
+- `rendered_page`：渲染出的图片路径。
+- `visual_observation`：视觉上看到了什么。
+- `provisional_concepts`：图或版面中可能对应的概念候选。
+- `must_capture`：进入教材时不能丢失的节点、步骤、关系、变量、条件、行列、箭头方向等。
+- `possible_detail_card_type`：建议类型，如 `figure`、`method`、`operation`、`exam_tip`。
+- `confidence`：`high | medium | uncertain`。
+
+**1.4 — Joint text + visual note KP extraction**
+
+正式提取 KP 时，输入流必须按页组织：
+
+```text
+Slide N:
+  extracted_text: ...
+  visual_page_notes: ...  # 如果有
+```
+
+当某页有 `visual_page_notes`，必须把 notes 与抽取文本同等看待。允许跨相邻页聚合成同一个 KP；图片页中只出现在图里的知识点也可以创建 KP 或 `detail_cards`。
+
+**1.5 — Inline comprehension blocker handling**
+
+每处理到一页或一个页段，都做这个自检：
+
+```text
+如果我把这页写成 KP/detail_card，是否有任何关键结构是我只能猜、不能从当前文本可靠确认的？
+```
+
+如果答案是“是”，该页就是 `comprehension_blocker`。立即暂停该页的 KP 判断，渲染页面，生成 `source: comprehension_blocker` 的 `visual_page_notes`，注入当前页输入，然后继续提取。不要把 blocker 留到最后，因为它们可能包含独立 KP。
+
+典型 blocker：
+
+- 代码/伪代码页：无法确定执行顺序、缩进层级、分支归属、循环范围、P/V 调用位置。
+- 表格页：无法确定行列对应关系、比较维度、表头归属。
+- 公式/推导页：无法确定公式结构、上下标、变量绑定、推导顺序。
+- 流程/步骤页：无法确定先后顺序、条件分支、箭头方向。
+- 案例/例题页：无法确定题干、条件、步骤、结论之间的对应关系。
+- 抽取文本明显交错、重复、断裂、跨栏混排，agent 只能“猜”原始页面。
+
+**1.6 — Page-risk audit schema**
+
+Stage A v2 推荐写 `docs/page-risk-<batch>.yaml`，`schema_version: 2`。所有页仍要有 `page_risks`，但只有进入最终视觉复核集合的页必须有 `visual_page_notes`。
+
+```yaml
+schema_version: 2
+summary:
+  pdf: sources/ppts/<file>.pdf
+  pages_total: 116
+  teaching_image_count: 2
+  comprehension_blocker_count: 1
+  final_visual_review_count: 3
+
+text_skeleton:
+  path_json: tmp/page-review/batch-002/text.json
+  path_txt: tmp/page-review/batch-002/text.txt
+
+teaching_image_scan:
+  tool: find-teaching-image-slides
+  scan_dir: tmp/page-review/batch-002/teaching-image-scan
+  json: tmp/page-review/batch-002/teaching-image-scan/teaching_image_pages.json
+  decision_ledger: tmp/page-review/batch-002/teaching-image-scan/review_decisions_template.csv
+  confirmed: [37, 50]
+  uncertain: []
+  excluded:
+    - page: 1
+      reason: template/title decoration only
+
+visual_page_notes:
+  - page: 48
+    source: comprehension_blocker
+    blocker: extracted_text_reading_order_corrupt
+    rendered_page: tmp/page-review/batch-002/pages/p048.png
+    visual_observation: 页面为两列售票问题伪代码，左列给出进程循环和进入互斥区，右列给出 if/else 分支。
+    provisional_concepts:
+      - 用记录型信号量解决售票问题
+    must_capture:
+      - 每个进程按旅客要求找到 A[j] 后执行 P(mutex)，进入互斥区。
+      - 读取 Xi := A[j] 后判断 Xi >= 1。
+      - 有票时 Xi 减一并写回 A[j]，随后 V(mutex)，再输出一张票。
+      - 无票时先 V(mutex)，再提示票已售完，并 goto L1。
+    possible_detail_card_type: method
+    confidence: high
+
+final_visual_review_pages:
+  - page: 37
+    source: teaching_image
+    risk_level: high
+    page_class: process_diagram
+  - page: 48
+    source: comprehension_blocker
+    risk_level: high
+    page_class: code_or_command
+
+page_risks:
+  - page: 1
+    risk_level: low
+    page_class: normal_text
+    evidence: [text_sufficient]
+  - page: 37
+    risk_level: high
+    page_class: process_diagram
+    evidence: [teaching_image]
+    visual_note_ref: 37
+  - page: 48
+    risk_level: high
+    page_class: code_or_command
+    evidence: [extracted_text_reading_order_corrupt]
+    visual_note_ref: 48
+```
+
+`schema_version` 缺失时按 v1 旧审计处理，以兼容历史项目。
+
+**1.7 — Sanity spot-check**
+
+随机抽 2–3 张（标题页 + 1–2 张中段）用当前可用的视觉路径读一遍，校验 KP 提取是否反映幻灯实际内容。这一步是质量抽样，不是主视觉发现机制。它主要抓：
 
 - pdfplumber 返回空（纯图片 slide）
 - 内容顺序判错
 - 视觉强调（如 ==考点==、红框、加粗箭头）在纯文本里丢了
 
-如果 spot-check 发现明显丢失，优先扩大到相关 high 页；只有证据显示 medium 页也丢关键结构时，才复核 medium 页。
+如果 spot-check 发现明显丢失，优先生成相关页的 `visual_page_notes`，然后重新检查受影响 KP/detail_cards。
 
 ### 2. Extract KPs
 
