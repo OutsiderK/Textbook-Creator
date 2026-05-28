@@ -315,6 +315,16 @@ Categories:
 
 **保真原则**：尽量保留 PPT 中的应试细节。宁可多抓一张 card，写正文时再选用，不要因为"看着不重要"就扔掉。Stage C 和 D 会按需消费。
 
+**Page-level detail coverage rule**:
+
+For every non-title, non-outline, non-duplicate slide included in any KP's `source.slides`, Stage A must ensure the slide has at least one concrete coverage hook:
+
+- a `detail_card` with `source_slide: <slide>`;
+- or a visually reviewed `must_cover` item tied to that slide;
+- or an explicit audit note in `docs/ingest-<batch>.md` explaining `section_divider`, `duplicate_of:<slide>`, or `no_substantive_content`.
+
+Do not treat `source.slides` as coverage. If a slide contains a definition, rule, naming convention, syntax, classification, advantage/limitation, example, formula, operation sequence, exam trap, or visual/table detail, create a `detail_card` even when the concept is already represented by a broader KP.
+
 For visually reviewed high-risk pages, use richer cards when the visual carries required details:
 
 ```yaml
@@ -426,6 +436,12 @@ The `path` field (project-relative) is required so `inspect_state.py` can recogn
 - (figure) 二级页表查找示意 → slide 14
 - (exam_tip) 常考 ==TLB miss + page fault== 双重开销 → slide 18
 - ...
+
+## Slide coverage exceptions
+
+- Slide 1: title page.
+- Slide 2: outline page.
+- Slide 8: duplicate of slide 7.
 
 ## 可能影响旧章的内容
 
