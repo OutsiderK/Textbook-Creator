@@ -15,6 +15,7 @@ Map of scripts to severity and when to run them. All scripts assume the current 
 |---|---|---|---|
 | `inspect_state.py` | Every invocation and after every stage | state report | Project state and next actions |
 | `check_kp_schema.py` | After A/B/C/D | hard | KP schema, status/queue rules, card fields |
+| `finalize_review_decisions.py` | During A, before KP extraction | hard | Every high-recall page has a valid decision and every exclusion has evidence |
 | `check_page_risk.py docs/page-risk-<batch>.yaml` | After A | hard | Stage A page-risk audit; supports legacy v1 contact-sheet audits and v2 visual_page_notes audits |
 | `check_chapter_frontmatter.py` | After C/D | hard | Chapter front matter and forbidden workflow terms |
 | `check_detail_coverage.py` | After C/D | hard | `must_cover` appears in chapter/support text unless deferred |
@@ -43,6 +44,9 @@ python3 scripts/inspect_state.py --json
 ## After Stage A (Ingest)
 
 ```bash
+python3 scripts/finalize_review_decisions.py \
+  tmp/page-review/batch-<batch>/teaching-image-scan/teaching_image_pages.json \
+  tmp/page-review/batch-<batch>/teaching-image-scan/review_decisions_template.csv
 python3 scripts/check_kp_schema.py
 python3 scripts/check_page_risk.py docs/page-risk-<batch>.yaml
 ```

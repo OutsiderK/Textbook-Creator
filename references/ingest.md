@@ -80,27 +80,27 @@ with pdfplumber.open(pdf_path) as pdf:
 
 这一步只建立骨架，不做最终视觉风险判定，不要求全页 contact sheet，也不要求逐页 `thumbnail_observation`。
 
-如果环境没 pdfplumber：`pip install pdfplumber`（也是 `/pdf` skill 推荐的栈）。退化方案用 `pypdf` 也行，但 pdfplumber 的页级元信息更有用。若没有 Poppler 命令，但有 PyMuPDF/fitz 和 Pillow，可用 PyMuPDF 渲染目标页作为视觉复核输入。
+如果环境没有 `pdfplumber`，先安装它：`pip install pdfplumber`。也可退化使用 `pypdf`，但 `pdfplumber` 能提供更有用的页级元信息。若没有 Poppler 命令，但有 PyMuPDF/fitz 和 Pillow，可用 PyMuPDF 渲染目标页作为视觉复核输入。
 
-**1.2 — Teaching image prepass**
+**1.2 — Built-in teaching-image prepass**
 
-对当前 PDF 运行 `$find-teaching-image-slides`，让它负责“严格教学图片页”的召回和去模板噪声：
+先读取 `references/teaching-image-review.md`，再运行项目自带的确定性扫描器，让它负责“严格教学图片页”的召回和去模板噪声：
 
 ```bash
-python3 /home/coder/.codex/skills/find-teaching-image-slides/scripts/scan_teaching_image_pages.py \
+python3 scripts/scan_teaching_image_pages.py \
   sources/ppts/<file>.pdf \
   --out tmp/page-review/batch-<batch>/teaching-image-scan
 ```
 
-然后按该 skill 的流程查看 `teaching_image_pages.md`、`contact_*.jpg`，填写 `review_decisions_template.csv`，并运行：
+按内部 review policy 查看 `teaching_image_pages.md` 和 `contact_*.jpg`，填写 `review_decisions_template.csv`，并运行：
 
 ```bash
-python3 /home/coder/.codex/skills/find-teaching-image-slides/scripts/finalize_review_decisions.py \
+python3 scripts/finalize_review_decisions.py \
   tmp/page-review/batch-<batch>/teaching-image-scan/teaching_image_pages.json \
   tmp/page-review/batch-<batch>/teaching-image-scan/review_decisions_template.csv
 ```
 
-Stage A 必须把 `confirmed + uncertain` 加入最终视觉复核集合。不要把 `$find-teaching-image-slides` 当作全部判定器：它识别教学图片页，但不能覆盖“没有教学图片、却因文本抽取乱序而无法理解”的页。
+finalizer 非零退出是硬阻塞；不要手抄或跳过 decision ledger。Stage A 必须把经验证的 `confirmed + uncertain` 加入最终视觉复核集合。内置扫描器不是全部判定器：它识别教学图片页，但不能覆盖“没有教学图片、却因文本抽取乱序而无法理解”的页。
 
 **1.3 — Build visual_page_notes before KP extraction**
 
@@ -192,7 +192,7 @@ text_skeleton:
   path_txt: tmp/page-review/batch-002/text.txt
 
 teaching_image_scan:
-  tool: find-teaching-image-slides
+  tool: built-in-teaching-image-prepass
   scan_dir: tmp/page-review/batch-002/teaching-image-scan
   json: tmp/page-review/batch-002/teaching-image-scan/teaching_image_pages.json
   decision_ledger: tmp/page-review/batch-002/teaching-image-scan/review_decisions_template.csv

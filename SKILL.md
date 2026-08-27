@@ -18,7 +18,7 @@ These are routing pointers, not the detailed rules. Load only the files needed f
 | Stage | MUST read before edits |
 |---|---|
 | Init | `references/initialize.md` |
-| Stage A (Ingest) | `references/ingest.md` |
+| Stage A (Ingest) | `references/ingest.md`, `references/teaching-image-review.md` |
 | Stage B (Rebalance) | `references/rebalance.md` |
 | Stage C (Write) | `references/write-chapter.md`, project `spec/style-guide.md`, project `spec/chapter-template.md`, project `spec/reference-chapter.md` |
 | Stage D (Integrate Supplement) | `references/integrate-supplement.md` |
@@ -50,6 +50,7 @@ Resolve `PROJECT_ROOT` before every action:
 Validate the resolved root before modifying files:
 
 - Existing projects must contain `spec/`, `scripts/inspect_state.py`, and `scripts/common.py`.
+- Stage A additionally requires `scripts/scan_teaching_image_pages.py`, `scripts/finalize_review_decisions.py`, and `scripts/render_stage_a_pages.py`.
 - Stage C and Stage D additionally require `scripts/workflow_job.py`.
 - If validation fails, report the missing files and ask whether to initialize, repair from `<skill-dir>/assets/project-template/`, or use another directory.
 
@@ -203,7 +204,7 @@ During ingest, build a page-level text skeleton first, then create visual input 
 
 The visual review set is the union of:
 
-- **Teaching-image pages**: pages confirmed or kept uncertain by `$find-teaching-image-slides`. These pages must receive `visual_page_notes` before formal KP extraction.
+- **Teaching-image pages**: pages confirmed or kept uncertain by the project-local teaching-image prepass (`scripts/scan_teaching_image_pages.py` + validated decision ledger). These pages must receive `visual_page_notes` before formal KP extraction.
 - **Comprehension blockers**: pages discovered during KP extraction where extracted text plus existing notes cannot reliably recover the teaching structure. Render the page immediately, create `visual_page_notes`, inject the note into that page's input, and then continue extraction.
 
 Use these signals to decide when a page is a comprehension blocker:
@@ -244,6 +245,7 @@ If a stage needs to modify a shared spec file (`terminology.md`, `style-guide.md
 |---|---|
 | `references/initialize.md` | Stage Init |
 | `references/ingest.md` | Stage A |
+| `references/teaching-image-review.md` | Stage A teaching-image prepass and agent review |
 | `references/rebalance.md` | Stage B |
 | `references/write-chapter.md` | Stage C |
 | `references/integrate-supplement.md` | Stage D |

@@ -18,9 +18,12 @@
 online-course-textbook/
 ├── SKILL.md                          # 路由器 + 行为规则（propose / override / recovery）
 ├── README.md                         # 本文件（维护者视角）
+├── scripts/build_release.py          # 可复现、自包含 release 构建门禁
+├── tests/                            # 内置 Stage A harness 的端到端回归
 ├── references/                       # progressive disclosure，按阶段单独加载
 │   ├── initialize.md                 # Init
 │   ├── ingest.md                     # Stage A 摄入
+│   ├── teaching-image-review.md      # Stage A 内置图片扫描后的 Agent 复核策略
 │   ├── rebalance.md                  # Stage B 重平衡
 │   ├── write-chapter.md              # Stage C 写章
 │   ├── integrate-supplement.md       # Stage D 补充（patch 旧章 + 写 supplement）
@@ -31,7 +34,7 @@ online-course-textbook/
     │                                 # course-skeleton / open-questions / terminology /
     │                                 # style-guide / chapter-template / reference-chapter /
     │                                 # quality-overrides / lab-policy / lab-template / visual-plans/
-    ├── scripts/                      # inspect_state / workflow_job / check_* / render_stage_a_pages / common
+    ├── scripts/                      # inspect_state / workflow_job / check_* / Stage A 图片扫描与渲染 / common
     ├── book/supplements/
     ├── assets/figures/
     ├── sources/ppts/                 # 用户把 PPT/PDF 放这里
@@ -40,6 +43,8 @@ online-course-textbook/
 ```
 
 > 注意：reference 文件名是 `integrate-supplement.md`（不是 `patch-chapter.md`）；脚手架目录是 `assets/project-template/`（不是 `assets/templates/`）。
+
+旧模板创建的项目若缺少 `scan_teaching_image_pages.py` 或 `finalize_review_decisions.py`，Stage A 开始前应从当前 skill 的 `assets/project-template/scripts/` 修复；不要静默退回外部 skill 或跳过 ledger。
 
 ---
 
@@ -92,12 +97,12 @@ ls -la ~/.claude/skills/online-course-textbook
 | **PyYAML** (`yaml`) | 几乎所有脚本读写 spec yaml | 必需 |
 | **markdown-it-py** (`markdown_it`) | `check_visual_assets` / `check_chapter_presentation` 解析 Markdown；**无 regex 退化**，缺失即报错 | Stage C 检查必需 |
 | **pdfplumber** | Stage A 建立逐页文本骨架（`references/ingest.md`） | Stage A 需要（退化：`pypdf`） |
-| **PyMuPDF** (`fitz`) | `render_stage_a_pages.py` 渲染待视觉复核的页 | Stage A 视觉复核需要 |
-| Pillow + Poppler | 备选渲染路径 | 可选 |
-| `$find-teaching-image-slides` skill | Stage A 教学图片页召回与去模板噪声 | Stage A 推荐；缺失时退化为人工抽样视觉复核 |
+| **PyMuPDF** (`fitz`) | 内置教学图片扫描 + `render_stage_a_pages.py` 目标页渲染 | Stage A 视觉复核必需 |
+| **Pillow** | 内置扫描器生成低 token contact sheets | Stage A 推荐；缺失时扫描仍运行，但需逐页渲染复核 |
+| Poppler | 备选 PDF 渲染路径 | 可选 |
 
 ```bash
-pip install pyyaml markdown-it-py pdfplumber pymupdf
+pip install pyyaml markdown-it-py pdfplumber pymupdf pillow
 ```
 
 `xml.etree`（SVG `<text>` 解析）是标准库，无需安装。
@@ -214,6 +219,7 @@ skill 在以下场景被自动加载并路由：
 |---|---|---|---|
 | `inspect_state.py [--json]` | 每次开工 + 每阶段后 | 状态报告 | 项目状态与下一步建议（路由 SSOT） |
 | `check_kp_schema.py` | A/B/C/D、init | hard | KP schema、status/queue 规则、卡片字段 |
+| `finalize_review_decisions.py <scan.json> <ledger.csv>` | A | hard | high-recall 页全部有决定；排除页有理由；输出 `confirmed + uncertain` |
 | `check_page_risk.py docs/page-risk-NNN.yaml` | A | hard | Stage A 页级风险审计（兼容 v1 contact-sheet 与 v2 visual_page_notes） |
 | `check_chapter_frontmatter.py` | C/D | hard + soft | front matter 结构（hard）+ 读者正文工作流术语泄漏（soft） |
 | `check_detail_coverage.py [chapter]` | C/D | hard | `must_cover` 是否落进正文/图/表/supplement，除非 deferred |
@@ -253,6 +259,9 @@ skill 在以下场景被自动加载并路由：
 ```bash
 cd ~/.codex/skills/online-course-textbook
 
+# 0) 回归内置 Stage A 图片扫描/ledger harness
+python3 -m unittest discover -s tests -v
+
 # 1) 用脚手架拉起一个临时项目
 rm -rf /tmp/oct-smoke && mkdir -p /tmp/oct-smoke
 cp -r assets/project-template/. /tmp/oct-smoke/
@@ -265,6 +274,16 @@ python3 scripts/check_open_questions.py      # ✓（soft）
 ```
 
 > `inspect_state.py` **不接受位置参数**；它从脚本自身路径推导项目根。要测某个项目，把脚本随模板拷进去后在该项目目录里运行。
+
+## Build release
+
+先跑 smoke test，再用维护脚本构建 ZIP：
+
+```bash
+python3 scripts/build_release.py /path/to/online-course-textbook.zip
+```
+
+构建器使用固定归档时间戳和排序，连续构建应得到相同字节；同时拒绝包含已退役外部 skill 名称或本机绝对 skill 路径的 release。
 
 ---
 
